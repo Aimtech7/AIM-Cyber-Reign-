@@ -1,0 +1,11 @@
+# ──────────────────────────────────────────────────────────────────────── #
+#  requirements.txt — Python Dependencies
+#  Project : AIM: Cyber Reign
+#  Author  : Aimtech
+# ──────────────────────────────────────────────────────────────────────── #
+#  This file lists every third‑party package the game needs.
+#  Install them with:  pip install -r requirements.txt
+# ──────────────────────────────────────────────────────────────────────── #
+
+# Ursina — lightweight 3D game engine built on top of Panda3D
+ursina

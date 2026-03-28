@@ -1,0 +1,35 @@
+# ──────────────────────────────────────────────────────────────────────── #
+#  .dockerignore — Docker Build Exclusions
+#  Project : AIM: Cyber Reign
+#  Author  : Aimtech
+# ──────────────────────────────────────────────────────────────────────── #
+#  Files and directories listed here are excluded from the Docker
+#  build context, keeping the image small and the build fast.
+# ──────────────────────────────────────────────────────────────────────── #
+
+# Python bytecode caches
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE / editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS‑generated clutter
+.DS_Store
+Thumbs.db
+
+# Git metadata (not needed inside the container)
+.git/
+.gitignore
+
+# Documentation source (optional — keep if you want docs in the image)
+# docs/
