@@ -1,28 +1,21 @@
 """
-scenes.py — Scene Manager Module (Phase 3)
+scenes.py — Scene Manager Module (Phase 5)
 =============================================
 Project : AIM: Cyber Reign
 Author  : Aimtech
-Purpose : Central SceneManager that handles switching between:
-            • Main Menu
-            • Settings Menu
-            • Game Scene (now with hacking flow)
-
-Phase 3 changes:
-    • Creates a GameState when entering the game scene.
-    • Passes a ``hack_callback`` to the environment so terminals
-      trigger the hacking panel.
-    • Orchestrates hacking flow: freeze player → open panel → handle
-      result → update terminal colour / game state → unfreeze player.
-    • HUD receives both player ref and game_state ref.
-
-How it connects:
-    main.py creates one SceneManager, calls show_menu(), and delegates
-    all key presses via handle_input().
+Purpose : Central SceneManager handling:
+            • Menu / Settings / Game scenes
+            • Hacking flow orchestration
+            • Security drone spawning
+            • Mission system & win/lose/restart (Phase 5)
 """
 
 # ── Ursina engine ──────────────────────────────────────────────────────── #
-from ursina import mouse, application
+from ursina import (
+    mouse, application, Entity, Text,
+    time as ursina_time, color, camera,
+    destroy as ursina_destroy,
+)
 
 # ── Project modules ────────────────────────────────────────────────────── #
 from src.menu import MainMenu
@@ -33,185 +26,210 @@ from src.ui import HUD
 from src.interaction import InteractionSystem
 from src.game_state import GameState
 from src.hacking import HackingPanel
+from src.enemies import SecurityDrone
+from src.missions import MissionManager, create_sector_breach_mission
+from src.config import (
+    DRONE_SPECS, TERMINAL_SPECS,
+    NEON_CYAN, NEON_MAGENTA, NEON_GREEN,
+)
+
+
+# ══════════════════════════════════════════════════════════════════════════ #
+#  _GameTicker — per‑frame game logic driver
+# ══════════════════════════════════════════════════════════════════════════ #
+class _GameTicker(Entity):
+    """Invisible Entity that ticks health, alert, and mission checks."""
+
+    def __init__(self, game_state, mission_manager, scene_manager):
+        super().__init__()
+        self.game_state      = game_state
+        self.mission_manager = mission_manager
+        self.scene_manager   = scene_manager
+
+    def update(self):
+        if self.game_state is None:
+            return
+        dt = ursina_time.dt
+        self.game_state.update_health(dt)
+        self.game_state.update_alert(dt)
+
+        # Update mission message timer
+        if self.mission_manager:
+            self.mission_manager.update_timer(dt)
+
+        # Check mission failure (player dead)
+        if self.mission_manager and self.mission_manager.check_failure(self.game_state):
+            # Mission just failed — show result overlay
+            self.scene_manager._show_end_screen(False)
 
 
 # ══════════════════════════════════════════════════════════════════════════ #
 #  SceneManager class
 # ══════════════════════════════════════════════════════════════════════════ #
 class SceneManager:
-    """
-    Orchestrates scene transitions and the hacking gameplay flow.
-
-    Scenes:
-        • menu     — Main Menu
-        • settings — Settings
-        • game     — Gameplay (3D world + player + HUD + hacking)
-    """
+    """Orchestrates scenes, hacking, drones, and missions."""
 
     def __init__(self):
-        """Initialise scene state with empty slots."""
         self.state = {
-            'menu':        None,   # MainMenu instance
-            'settings':    None,   # SettingsMenu instance
-            'environment': None,   # GameEnvironment instance
-            'player':      None,   # PlayerController instance
-            'hud':         None,   # HUD instance
-            'interaction': None,   # InteractionSystem instance
-            'game_state':  None,   # GameState instance
-            'hacking':     None,   # HackingPanel instance (while hacking)
+            'menu':        None,
+            'settings':    None,
+            'environment': None,
+            'player':      None,
+            'hud':         None,
+            'interaction': None,
+            'game_state':  None,
+            'hacking':     None,
+            'ticker':      None,
+            'drones':      [],
+            'mission_mgr': None,     # Phase 5
+            'end_screen':  [],       # Phase 5 — end overlay elements
         }
 
-    # ------------------------------------------------------------------ #
-    #  Helpers
-    # ------------------------------------------------------------------ #
     def _destroy_keys(self, keys):
-        """Destroy objects stored under the given state keys."""
         for key in keys:
             obj = self.state.get(key)
-            if obj is not None:
-                obj.destroy()
+            if obj is None:
+                continue
+            if isinstance(obj, list):
+                for item in obj:
+                    try:
+                        item.destroy()
+                    except Exception:
+                        pass
+                self.state[key] = []
+            else:
+                try:
+                    obj.destroy()
+                except Exception:
+                    pass
                 self.state[key] = None
 
     # ================================================================== #
-    #  MENU SCENE
+    #  MENU
     # ================================================================== #
     def show_menu(self):
-        """Display the main menu — tear down everything else."""
         self._destroy_keys([
             'environment', 'player', 'hud', 'interaction', 'settings',
-            'game_state', 'hacking',
+            'game_state', 'hacking', 'ticker', 'drones', 'mission_mgr',
+            'end_screen',
         ])
-
         mouse.locked = False
-
         self.state['menu'] = MainMenu(
             start_callback=self.start_game,
             settings_callback=self.show_settings,
             exit_callback=application.quit,
         )
 
-    # ================================================================== #
-    #  SETTINGS SCENE
-    # ================================================================== #
     def show_settings(self):
-        """Display the settings panel."""
         self._destroy_keys(['menu'])
         mouse.locked = False
-
-        self.state['settings'] = SettingsMenu(
-            back_callback=self.show_menu,
-        )
+        self.state['settings'] = SettingsMenu(back_callback=self.show_menu)
 
     # ================================================================== #
-    #  GAME SCENE
+    #  GAME
     # ================================================================== #
     def start_game(self):
-        """Build the game world with interaction + hacking support."""
-        self._destroy_keys(['menu', 'settings'])
+        self._destroy_keys(['menu', 'settings', 'end_screen'])
 
-        # ── Game state ───────────────────────────────────────────────── #
-        from src.config import TERMINAL_SPECS  # avoid circular at module level
-        self.state['game_state'] = GameState(
-            total_terminals=len(TERMINAL_SPECS),
-        )
+        # Game state
+        self.state['game_state'] = GameState(total_terminals=len(TERMINAL_SPECS))
 
-        # ── Player ───────────────────────────────────────────────────── #
+        # Mission manager (Phase 5)
+        mm = MissionManager()
+        mm.load_mission(create_sector_breach_mission())
+        self.state['mission_mgr'] = mm
+
+        # Player
         self.state['player'] = PlayerController()
 
-        # ── Interaction system ───────────────────────────────────────── #
+        # Interaction
         self.state['interaction'] = InteractionSystem(
             player_ref=self.state['player'],
         )
 
-        # ── Environment — pass hack callback ─────────────────────────── #
+        # Environment — with extraction callback
         self.state['environment'] = GameEnvironment(
             interaction_system=self.state['interaction'],
-            hack_callback=self._on_terminal_hack,     # ← hacking entry point
+            hack_callback=self._on_terminal_hack,
+            extraction_callback=self._on_extraction,
         )
 
-        # ── HUD — pass player ref AND game state ─────────────────────── #
+        # Drones
+        drones = []
+        for spawn in DRONE_SPECS:
+            drones.append(SecurityDrone(
+                spawn_pos=spawn,
+                player_ref=self.state['player'],
+                game_state=self.state['game_state'],
+            ))
+        self.state['drones'] = drones
+
+        # Ticker
+        self.state['ticker'] = _GameTicker(
+            self.state['game_state'],
+            self.state['mission_mgr'],
+            self,
+        )
+
+        # HUD
         self.state['hud'] = HUD(
             player_ref=self.state['player'],
             game_state=self.state['game_state'],
+            mission_manager=self.state['mission_mgr'],
         )
 
-        # Lock mouse for FPS controls
         mouse.locked = True
 
     # ================================================================== #
-    #  HACKING FLOW  (Phase 3)
+    #  HACKING FLOW
     # ================================================================== #
     def _on_terminal_hack(self, label, security_level):
-        """
-        Called when the player presses E on a terminal.
-        Opens the hacking panel and freezes the player.
-
-        Args:
-            label          : str — terminal label
-            security_level : int — difficulty tier (1–3)
-        """
-        game_state = self.state.get('game_state')
-
-        # If already breached, do nothing
-        if game_state and game_state.is_breached(label):
+        gs = self.state.get('game_state')
+        if gs and gs.is_breached(label):
             return
-
-        # If a hacking panel is already open, do nothing
         if self.state.get('hacking') is not None:
             return
 
-        # ── Freeze the player ────────────────────────────────────────── #
         player = self.state.get('player')
         if player and player.controller:
-            player.controller.enabled = False   # disable movement
-        mouse.locked = False                     # unlock mouse for panel UI
+            player.controller.enabled = False
+        mouse.locked = False
 
-        # ── Pause the interaction system ─────────────────────────────── #
         interaction = self.state.get('interaction')
         if interaction:
             interaction.paused = True
 
-        # ── Set terminal to "active" colour while hacking ────────────── #
         env = self.state.get('environment')
         if env:
             env.set_terminal_color(label, 'active')
 
-        # ── Open the hacking panel ───────────────────────────────────── #
-        def on_hack_complete(success):
-            """Callback from the hacking panel."""
+        self._hack_security = security_level
+
+        def on_complete(success):
             self._on_hack_result(label, success)
 
         self.state['hacking'] = HackingPanel(
             terminal_label=label,
             security_level=security_level,
-            on_complete=on_hack_complete,
+            on_complete=on_complete,
         )
 
-    # ------------------------------------------------------------------ #
-    #  Hacking result handler
-    # ------------------------------------------------------------------ #
     def _on_hack_result(self, label, success):
-        """
-        Called when the hacking panel finishes (success or failure).
-
-        Args:
-            label   : str  — which terminal was hacked
-            success : bool — True if the player completed the sequence
-        """
-        env        = self.state.get('environment')
-        game_state = self.state.get('game_state')
+        env         = self.state.get('environment')
+        gs          = self.state.get('game_state')
         interaction = self.state.get('interaction')
+        mm          = self.state.get('mission_mgr')
+        sec_level   = getattr(self, '_hack_security', 1)
+
+        # Alert from hacking
+        if gs:
+            gs.alert_from_hack(success, sec_level)
 
         if success:
-            # ── Mark as breached ─────────────────────────────────────── #
-            if game_state:
-                game_state.breach_terminal(label)
-
-            # ── Update terminal appearance to "breached" ─────────────── #
+            if gs:
+                gs.breach_terminal(label)
             if env:
                 env.set_terminal_color(label, 'breached')
-
-            # ── Update the interactable prompt ───────────────────────── #
             if interaction and env:
                 parts = env.terminal_parts.get(label)
                 if parts:
@@ -220,37 +238,108 @@ class SceneManager:
                         new_prompt=f'{label} — BREACHED',
                         new_message=f'[ {label} — already breached ]',
                     )
+            # Notify mission manager (Phase 5)
+            if mm:
+                mm.on_terminal_breached(label)
         else:
-            # ── Hack failed — revert terminal to locked ──────────────── #
             if env:
                 env.set_terminal_color(label, 'locked')
 
-        # ── Clean up the hacking panel reference ─────────────────────── #
         self.state['hacking'] = None
-
-        # ── Unfreeze the player ──────────────────────────────────────── #
         player = self.state.get('player')
         if player and player.controller:
-            player.controller.enabled = True    # re‑enable movement
-        mouse.locked = True                      # re‑lock mouse for FPS
-
-        # ── Unpause interaction system ───────────────────────────────── #
+            player.controller.enabled = True
+        mouse.locked = True
         if interaction:
             interaction.paused = False
 
     # ================================================================== #
-    #  INPUT HANDLER
+    #  EXTRACTION (Phase 5)
+    # ================================================================== #
+    def _on_extraction(self):
+        """Called when the player presses E while in the extraction zone."""
+        mm = self.state.get('mission_mgr')
+        if mm is None:
+            return
+
+        result = mm.check_extraction()
+        if result == 'complete':
+            self._show_end_screen(True)
+
+    # ================================================================== #
+    #  END SCREEN — win / lose overlay (Phase 5)
+    # ================================================================== #
+    def _show_end_screen(self, victory):
+        """
+        Display a full‑screen result overlay.
+        Press R to restart or ESC for menu.
+        """
+        # Freeze player and drones
+        player = self.state.get('player')
+        if player and player.controller:
+            player.controller.enabled = False
+        mouse.locked = False
+
+        # Disable interaction
+        interaction = self.state.get('interaction')
+        if interaction:
+            interaction.paused = True
+
+        # Overlay elements
+        elements = []
+
+        # Dark backdrop
+        bg = Entity(parent=camera.ui, model='quad', scale=(2, 1),
+                     color=color.rgba(5, 3, 15, 200), z=0.5)
+        elements.append(bg)
+
+        # Result text
+        if victory:
+            result_text = '[ MISSION COMPLETE ]'
+            result_clr  = color.rgb(*NEON_GREEN)
+        else:
+            result_text = '[ MISSION FAILED ]'
+            result_clr  = color.rgb(*NEON_MAGENTA)
+
+        title = Text(text=result_text, parent=camera.ui,
+                     position=(0, 0.1), origin=(0, 0),
+                     scale=3.0, color=result_clr, font='VeraMono.ttf')
+        elements.append(title)
+
+        # Instructions
+        hint = Text(text='Press R to Restart  |  ESC for Menu',
+                    parent=camera.ui, position=(0, -0.05), origin=(0, 0),
+                    scale=1.2, color=color.rgb(*NEON_CYAN), font='VeraMono.ttf')
+        elements.append(hint)
+
+        self.state['end_screen'] = elements
+
+    def _clear_end_screen(self):
+        """Remove end screen overlay elements."""
+        for e in self.state.get('end_screen', []):
+            try:
+                ursina_destroy(e)
+            except Exception:
+                pass
+        self.state['end_screen'] = []
+
+    # ================================================================== #
+    #  INPUT
     # ================================================================== #
     def handle_input(self, key):
-        """
-        Global input handler — ESC returns to menu (unless hacking).
-
-        Args:
-            key : str — the key that was pressed.
-        """
-        # Don't allow ESC to return to menu while hacking is active
+        # Hacking panel has its own input
         if self.state.get('hacking') is not None:
-            return   # hacking panel handles its own ESC
+            return
+
+        # End screen controls
+        if self.state.get('end_screen'):
+            if key == 'r':
+                self._clear_end_screen()
+                self.start_game()       # restart the mission
+            elif key == 'escape':
+                self._clear_end_screen()
+                self.show_menu()
+            return
 
         if key == 'escape':
             if self.state.get('player') is not None:

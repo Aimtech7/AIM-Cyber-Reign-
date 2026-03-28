@@ -277,11 +277,118 @@ TERMINAL_COLOR_BREACHED = NEON_CYAN        # cyan — already hacked
 
 
 # ──────────────────────────────────────────────────────────────────────── #
+#  Security Drone Settings  (Phase 4)
+# ──────────────────────────────────────────────────────────────────────── #
+
+# Spawn positions for security drones: (x, y, z)
+DRONE_SPECS = [
+    ( 10, 3, -10),    # near Access Node Alpha
+    (-10, 3,  10),    # near Access Node Beta
+    ( 20, 4,  20),    # far corner patrol
+    (-15, 3, -20),    # near Data Terminal Gamma
+]
+
+# Patrol radius — how far a drone wanders from its spawn point
+DRONE_PATROL_RADIUS = 8
+
+# Detection radius — player within this range triggers suspicion / alert
+DRONE_DETECT_RADIUS = 12
+
+# Close-attack radius — player within this range takes damage
+DRONE_DAMAGE_RADIUS = 3.5
+
+# Movement speeds (world units per second)
+DRONE_PATROL_SPEED = 2.0     # idle wander speed
+DRONE_CHASE_SPEED  = 4.5     # pursuit speed
+
+# Hover bob — vertical oscillation while patrolling
+DRONE_BOB_SPEED  = 2.0       # oscillations per second
+DRONE_BOB_AMOUNT = 0.3       # amplitude in world units
+
+# Time a drone stays alert after losing sight of the player (seconds)
+DRONE_ALERT_TIMEOUT = 6.0
+
+# Rotation speed when facing the player (degrees per second)
+DRONE_TURN_SPEED = 180
+
+# Damage the drone inflicts per second when within damage radius
+DRONE_DAMAGE_PER_SEC = 8
+
+# Drone colours per state
+DRONE_COLOR_IDLE       = NEON_CYAN
+DRONE_COLOR_SUSPICIOUS = NEON_YELLOW
+DRONE_COLOR_ALERT      = NEON_MAGENTA
+
+
+# ──────────────────────────────────────────────────────────────────────── #
+#  Alert System Settings  (Phase 4)
+# ──────────────────────────────────────────────────────────────────────── #
+
+# Alert levels: 0 = CALM, 1 = SUSPICIOUS, 2 = ALERT
+ALERT_LEVEL_CALM       = 0
+ALERT_LEVEL_SUSPICIOUS = 1
+ALERT_LEVEL_ALERT      = 2
+
+# How many seconds before the global alert decays by one level
+ALERT_DECAY_TIME = 20.0
+
+# Alert increase when a hack fails (added to alert accumulator)
+ALERT_ON_HACK_FAIL = 1.0
+
+# Alert increase when a hack succeeds (proportional to security level)
+ALERT_ON_HACK_SUCCESS_PER_LEVEL = 0.3
+
+# Alert labels for HUD display
+ALERT_LABELS = {0: 'CALM', 1: 'SUSPICIOUS', 2: 'ALERT'}
+
+# Alert HUD colours
+ALERT_COLORS = {
+    0: NEON_GREEN,
+    1: NEON_YELLOW,
+    2: NEON_MAGENTA,
+}
+
+
+# ──────────────────────────────────────────────────────────────────────── #
+#  Player Health / Shield Settings  (Phase 4)
+# ──────────────────────────────────────────────────────────────────────── #
+
+# Maximum player health points
+PLAYER_MAX_HEALTH = 100
+
+# Health regeneration rate when not taking damage (HP per second)
+PLAYER_HEALTH_REGEN = 2.0
+
+# Seconds after last damage before regen starts
+PLAYER_REGEN_DELAY = 4.0
+
+
+# ──────────────────────────────────────────────────────────────────────── #
+#  Mission System Settings  (Phase 5)
+# ──────────────────────────────────────────────────────────────────────── #
+
+# Extraction zone position and radius (world coords)
+EXTRACTION_ZONE_POS    = (-20, 0, -20)    # far corner of the map
+EXTRACTION_ZONE_RADIUS = 4.0              # player must be within this
+EXTRACTION_ZONE_COLOR  = (0, 255, 180)    # teal‑green glow
+
+# Highlight colour for mission‑required terminals (distinct from normal)
+MISSION_TARGET_COLOR   = (255, 100, 0)    # orange glow on target terminals
+
+# Mission feedback message display time (seconds)
+MISSION_MSG_DURATION   = 4.0
+
+# Labels of terminals required for "Sector Breach" mission
+MISSION_REQUIRED_TERMINALS = ['Access Node Alpha', 'Data Terminal Gamma']
+
+
+# ──────────────────────────────────────────────────────────────────────── #
 #  Metadata
 # ──────────────────────────────────────────────────────────────────────── #
 
 # Project metadata used by documentation generators and splash screens
 PROJECT_NAME    = "AIM: Cyber Reign"
 PROJECT_AUTHOR  = "Aimtech"
-PROJECT_VERSION = "0.3.0"
-PROJECT_PHASE   = "Phase 3 — Hacking Core System"
+PROJECT_VERSION = "0.5.0"
+PROJECT_PHASE   = "Phase 5 — Mission & Objective System"
+
