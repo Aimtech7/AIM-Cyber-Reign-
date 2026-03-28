@@ -1,25 +1,23 @@
 """
-environment.py — Game Environment Module (Phase 2)
+environment.py — Game Environment Module (Phase 3)
 ====================================================
 Project : AIM: Cyber Reign
 Author  : Aimtech
-Purpose : Builds the expanded 3D cyberpunk world.  Phase 2 adds:
-          • neon pillars
-          • boundary walls
-          • elevated platforms
-          • interactive cyber terminals
-          alongside the existing floor grid and cube buildings.
+Purpose : Builds the expanded 3D cyberpunk world.  Phase 3 gives
+          terminals hackable states (locked / active / breached) with
+          colour changes driven by the game state.
 
 How it connects:
     The SceneManager (scenes.py) instantiates a GameEnvironment when
-    the player enters the game scene.  The environment also receives
-    an InteractionSystem reference so it can register terminals.
+    the player enters the game scene.  The environment receives:
+        • interaction_system — to register terminals as interactables
+        • hack_callback      — function called when a terminal is activated
 
 Key concepts:
-    • All new object specs live in config.py (PILLAR_SPECS, etc.).
-    • Terminals are 3D objects that are also registered as
-      Interactable objects with the InteractionSystem.
-    • Colours are randomly assigned from the neon palette.
+    • Terminal base/screen/accent entities are stored per terminal
+      so their colours can be updated after a breach.
+    • TERMINAL_SPECS now include a security_level field.
+    • Colours cycle:  LOCKED (green) → ACTIVE (yellow) → BREACHED (cyan).
 """
 
 # ── Standard library ───────────────────────────────────────────────────── #
@@ -46,6 +44,9 @@ from src.config import (
     PLATFORM_SPECS,
     TERMINAL_SPECS,
     AMBIENT_COLOR, SUN_COLOR, SUN_ROTATION,
+    TERMINAL_COLOR_LOCKED,
+    TERMINAL_COLOR_ACTIVE,
+    TERMINAL_COLOR_BREACHED,
 )
 from src.interaction import Interactable
 
@@ -59,20 +60,27 @@ class GameEnvironment:
 
     Args:
         interaction_system : InteractionSystem or None
-            If provided, terminals are registered for player interaction.
+        hack_callback      : callable(label, security_level) or None
+            Called when the player presses E on a terminal.
 
     Usage:
-        env = GameEnvironment(interaction_system=my_system)
+        env = GameEnvironment(interaction_system=sys, hack_callback=fn)
+        env.set_terminal_color("Access Node Alpha", "breached")
         env.destroy()
     """
 
-    def __init__(self, interaction_system=None):
+    def __init__(self, interaction_system=None, hack_callback=None):
         """Construct the full environment."""
         # Master list of all entities — used for bulk cleanup
         self.entities = []
 
-        # Store the interaction system reference
-        self._interaction = interaction_system
+        # Store references
+        self._interaction   = interaction_system
+        self._hack_callback = hack_callback
+
+        # Per‑terminal entity references for colour updates
+        # Key = label, Value = dict with 'base', 'screen', 'accent' entities
+        self.terminal_parts = {}
 
         # Build world layers in order
         self._build_floor()       # ground plane + grid
@@ -87,11 +95,7 @@ class GameEnvironment:
     #  FLOOR
     # ================================================================== #
     def _build_floor(self):
-        """
-        Create a large dark plane and overlay thin cyan grid lines.
-        The floor is also the ground collider for the player.
-        """
-        # Main ground plane
+        """Create a large dark plane and overlay thin cyan grid lines."""
         floor = Entity(
             model='plane',
             scale=FLOOR_SCALE,
@@ -102,10 +106,8 @@ class GameEnvironment:
         )
         self.entities.append(floor)
 
-        # Grid overlay lines (X and Z axes)
         half_size = int(FLOOR_SCALE[0] / 2)
         for i in range(-half_size, half_size + 1, GRID_LINE_SPACING):
-            # Line running along X axis
             line_x = Entity(
                 model='cube',
                 scale=(FLOOR_SCALE[0], 0.01, 0.02),
@@ -113,7 +115,6 @@ class GameEnvironment:
                 color=color.rgba(*NEON_CYAN, GRID_LINE_ALPHA),
                 unlit=True,
             )
-            # Line running along Z axis
             line_z = Entity(
                 model='cube',
                 scale=(0.02, 0.01, FLOOR_SCALE[2]),
@@ -127,11 +128,7 @@ class GameEnvironment:
     #  BUILDINGS
     # ================================================================== #
     def _build_buildings(self):
-        """
-        Scatter neon‑coloured cube structures around the world.
-        Each building has a dark body, a glowing top edge, and
-        glowing vertical corner edges.
-        """
+        """Scatter neon‑coloured cube structures around the world."""
         neon_palette = [
             color.rgb(*NEON_CYAN),
             color.rgb(*NEON_PURPLE),
@@ -143,7 +140,6 @@ class GameEnvironment:
         for x, z, w, h, d in BUILDING_SPECS:
             clr = random.choice(neon_palette)
 
-            # Dark building body
             body = Entity(
                 model='cube',
                 position=(x, h / 2, z),
@@ -152,7 +148,6 @@ class GameEnvironment:
             )
             self.entities.append(body)
 
-            # Glowing top edge strip
             top_glow = Entity(
                 model='cube',
                 position=(x, h + 0.05, z),
@@ -162,7 +157,6 @@ class GameEnvironment:
             )
             self.entities.append(top_glow)
 
-            # Glowing vertical corner edges
             for dx, dz in [(-w/2, 0), (w/2, 0), (0, -d/2), (0, d/2)]:
                 edge = Entity(
                     model='cube',
@@ -174,13 +168,10 @@ class GameEnvironment:
                 self.entities.append(edge)
 
     # ================================================================== #
-    #  PILLARS  (Phase 2)
+    #  PILLARS
     # ================================================================== #
     def _build_pillars(self):
-        """
-        Create decorative neon pillars around the central area.
-        Each pillar is a thin tall cube with a glowing ring at the top.
-        """
+        """Create decorative neon pillars."""
         neon_palette = [
             color.rgb(*NEON_CYAN),
             color.rgb(*NEON_PURPLE),
@@ -190,7 +181,6 @@ class GameEnvironment:
         for x, z, radius, height in PILLAR_SPECS:
             clr = random.choice(neon_palette)
 
-            # Pillar body — dark tinted column
             pillar = Entity(
                 model='cube',
                 position=(x, height / 2, z),
@@ -199,7 +189,6 @@ class GameEnvironment:
             )
             self.entities.append(pillar)
 
-            # Glowing ring at the top of the pillar
             ring = Entity(
                 model='cube',
                 position=(x, height + 0.05, z),
@@ -209,7 +198,6 @@ class GameEnvironment:
             )
             self.entities.append(ring)
 
-            # Glowing base ring at the bottom
             base_ring = Entity(
                 model='cube',
                 position=(x, 0.05, z),
@@ -220,25 +208,20 @@ class GameEnvironment:
             self.entities.append(base_ring)
 
     # ================================================================== #
-    #  WALLS  (Phase 2)
+    #  WALLS
     # ================================================================== #
     def _build_walls(self):
-        """
-        Create boundary walls around the arena perimeter.
-        Walls have a dark body with a neon top edge.
-        """
+        """Create boundary walls around the arena perimeter."""
         for x, z, w, h, d in WALL_SPECS:
-            # Dark wall body
             wall = Entity(
                 model='cube',
                 position=(x, h / 2, z),
                 scale=(w, h, d),
-                color=color.rgb(8, 8, 20),       # very dark
-                collider='box',                    # solid barrier
+                color=color.rgb(8, 8, 20),
+                collider='box',
             )
             self.entities.append(wall)
 
-            # Neon top edge
             wall_glow = Entity(
                 model='cube',
                 position=(x, h + 0.03, z),
@@ -249,25 +232,20 @@ class GameEnvironment:
             self.entities.append(wall_glow)
 
     # ================================================================== #
-    #  PLATFORMS  (Phase 2)
+    #  PLATFORMS
     # ================================================================== #
     def _build_platforms(self):
-        """
-        Create elevated walkable platforms.
-        Each platform has a flat top surface with neon edge glow.
-        """
+        """Create elevated walkable platforms."""
         for x, z, w, h, d in PLATFORM_SPECS:
-            # Platform surface — walkable with collider
             platform = Entity(
                 model='cube',
                 position=(x, h / 2, z),
                 scale=(w, h, d),
                 color=color.rgb(12, 12, 30),
-                collider='box',                    # player can stand on it
+                collider='box',
             )
             self.entities.append(platform)
 
-            # Neon edge glow around the platform top
             edge_glow = Entity(
                 model='cube',
                 position=(x, h + 0.02, z),
@@ -278,16 +256,18 @@ class GameEnvironment:
             self.entities.append(edge_glow)
 
     # ================================================================== #
-    #  TERMINALS  (Phase 2)
+    #  TERMINALS  (Phase 3 — now with states)
     # ================================================================== #
     def _build_terminals(self):
         """
-        Create interactive cyber terminal objects.
-        Each terminal is a small glowing pedestal.  If an interaction
-        system is available, terminals are registered as Interactable
-        objects so the player can activate them with 'E'.
+        Create interactive cyber terminal objects with state support.
+        Each terminal starts in 'locked' state.  Colour changes when
+        the player interacts or breaches the terminal.
         """
-        for x, z, label in TERMINAL_SPECS:
+        for x, z, label, security_level in TERMINAL_SPECS:
+            # Default glow colour = locked (green)
+            glow_clr = color.rgb(*TERMINAL_COLOR_LOCKED)
+
             # Terminal base — dark pedestal
             base = Entity(
                 model='cube',
@@ -297,12 +277,12 @@ class GameEnvironment:
             )
             self.entities.append(base)
 
-            # Glowing top screen — bright green
+            # Glowing top screen
             screen = Entity(
                 model='cube',
                 position=(x, 1.1, z),
                 scale=(0.5, 0.2, 0.5),
-                color=color.rgb(*NEON_GREEN),
+                color=glow_clr,
                 unlit=True,
             )
             self.entities.append(screen)
@@ -312,25 +292,69 @@ class GameEnvironment:
                 model='cube',
                 position=(x, 0.05, z),
                 scale=(0.8, 0.06, 0.8),
-                color=color.rgb(*NEON_GREEN),
+                color=glow_clr,
                 unlit=True,
             )
             self.entities.append(accent)
 
+            # Store per‑terminal entity references for later recolouring
+            self.terminal_parts[label] = {
+                'base':   base,
+                'screen': screen,
+                'accent': accent,
+            }
+
             # Register with the interaction system (if available)
             if self._interaction is not None:
+                # Build a callback that carries the terminal's label
+                # and security level to the hacking system
+                def make_callback(lbl, sec):
+                    """Factory to capture label + security in a closure."""
+                    def cb():
+                        if self._hack_callback:
+                            self._hack_callback(lbl, sec)
+                    return cb
+
                 interactable = Interactable(
-                    entity=base,                            # the pedestal
-                    prompt=f'Press E to access {label}',    # on‑screen hint
-                    message=f'[ {label} — CONNECTED ]',    # feedback text
+                    entity=base,
+                    prompt=f'Press E to hack {label}',
+                    message=f'[ Initiating breach on {label} … ]',
+                    callback=make_callback(label, security_level),
                 )
                 self._interaction.add_interactable(interactable)
+
+    # ================================================================== #
+    #  TERMINAL COLOUR UPDATE  (Phase 3)
+    # ================================================================== #
+    def set_terminal_color(self, label, state):
+        """
+        Update a terminal's glow colour based on its current state.
+
+        Args:
+            label : str — terminal label (must match a key in terminal_parts)
+            state : str — one of 'locked', 'active', 'breached'
+        """
+        parts = self.terminal_parts.get(label)
+        if parts is None:
+            return   # unknown terminal — skip silently
+
+        # Pick the colour for the requested state
+        if state == 'active':
+            clr = color.rgb(*TERMINAL_COLOR_ACTIVE)
+        elif state == 'breached':
+            clr = color.rgb(*TERMINAL_COLOR_BREACHED)
+        else:
+            clr = color.rgb(*TERMINAL_COLOR_LOCKED)
+
+        # Apply to screen and accent ring
+        parts['screen'].color = clr
+        parts['accent'].color = clr
 
     # ================================================================== #
     #  LIGHTING
     # ================================================================== #
     def _build_lighting(self):
-        """Add ambient and directional lights for a moody night feel."""
+        """Add ambient and directional lights."""
         ambient = AmbientLight(color=color.rgb(*AMBIENT_COLOR))
         self.entities.append(ambient)
 
@@ -349,3 +373,4 @@ class GameEnvironment:
             except Exception:
                 pass
         self.entities.clear()
+        self.terminal_parts.clear()

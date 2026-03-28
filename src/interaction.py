@@ -1,41 +1,33 @@
 """
-interaction.py — Interaction System Module
-=============================================
+interaction.py — Interaction System Module (Phase 3)
+======================================================
 Project : AIM: Cyber Reign
 Author  : Aimtech
-Purpose : Provides a reusable interaction framework.  Any 3D object
-          can be registered as "interactable"; when the player walks
-          close enough, a prompt appears, and pressing the interact
-          key triggers a callback.
+Purpose : Reusable interaction framework.  Any 3D object can be registered
+          as "interactable"; when the player walks close enough a prompt
+          appears; pressing the interact key triggers a callback.
+
+Phase 3 changes:
+    • Added ``paused`` flag — when True, the system stops checking
+      proximity and ignores input (used while the hacking panel is open).
+    • Added ``update_prompt()`` to change an interactable's prompt text
+      after registration (e.g. from "Press E to hack" to "BREACHED").
 
 How it connects:
     • environment.py registers cyber terminals via add_interactable().
-    • scenes.py creates the InteractionSystem when entering the game
-      scene and passes it a reference to the player controller.
-    • The system's update() runs every frame (it inherits from Entity).
-
-Key concepts:
-    • ``Interactable`` is a data class that bundles an entity with its
-      prompt text and callback function.
-    • ``InteractionSystem`` inherits from Ursina ``Entity`` so its
-      ``update()`` method is called automatically each frame.
-    • Distance checks use ``distance()`` between the player position
-      and each interactable's world position.
-
-Why a separate file:
-    Keeping interaction logic isolated means new interactable types
-    (doors, loot boxes, NPCs) can be added without modifying existing
-    code — just call ``system.add_interactable(...)``.
+    • scenes.py creates the InteractionSystem and pauses/unpauses it
+      around hacking sessions.
+    • The system's update() runs every frame (inherits from Entity).
 """
 
 # ── Ursina engine ──────────────────────────────────────────────────────── #
 from ursina import (
-    Entity,       # base class — gives us update() each frame
-    Text,         # on‑screen prompt text
-    color,        # colour helpers
-    distance,     # distance between two entities / positions
+    Entity,
+    Text,
+    color,
+    distance,
     destroy as ursina_destroy,
-    time as ursina_time,    # delta‑time access
+    time as ursina_time,
 )
 
 # ── Project imports ────────────────────────────────────────────────────── #
@@ -64,17 +56,10 @@ class Interactable:
 
     def __init__(self, entity, prompt="Press E to interact",
                  message="Accessed", callback=None):
-        """
-        Args:
-            entity   : the world‑space Entity to interact with
-            prompt   : hint text displayed near the crosshair
-            message  : confirmation text shown after pressing E
-            callback : optional function called on interaction
-        """
-        self.entity   = entity    # the 3D object
-        self.prompt   = prompt    # "Press E to …"
-        self.message  = message   # "Access Node Connected"
-        self.callback = callback  # extra logic (or None)
+        self.entity   = entity
+        self.prompt   = prompt
+        self.message  = message
+        self.callback = callback
 
 
 # ══════════════════════════════════════════════════════════════════════════ #
@@ -85,22 +70,14 @@ class InteractionSystem(Entity):
     Checks every frame whether the player is near any registered
     Interactable, shows a prompt, and handles the interact key.
 
-    Usage:
-        system = InteractionSystem(player_ref=my_player_controller)
-        system.add_interactable(Interactable(entity, prompt, message))
-        # … later …
-        system.destroy()
+    Attributes:
+        paused : bool — when True, proximity checks and input are skipped.
     """
 
     def __init__(self, player_ref, **kwargs):
-        """
-        Args:
-            player_ref : PlayerController — reference to the active player
-        """
-        # Initialise the Entity base (invisible, no model)
         super().__init__(**kwargs)
 
-        # Store reference to the player so we can check distance
+        # Reference to the player controller
         self.player_ref = player_ref
 
         # List of registered Interactable objects
@@ -109,103 +86,121 @@ class InteractionSystem(Entity):
         # Currently active (nearest) interactable, or None
         self._active = None
 
+        # Pause flag — set True while the hacking panel is open
+        self.paused = False
+
         # ── Prompt text (hidden by default) ──────────────────────────── #
         self.prompt_text = Text(
-            text='',                           # initially empty
-            position=(0, -0.15),               # centre‑bottom of screen
-            origin=(0, 0),                     # centred anchor
-            scale=1.3,                         # readable size
-            color=color.rgb(*NEON_YELLOW),     # neon yellow for visibility
+            text='',
+            position=(0, -0.15),
+            origin=(0, 0),
+            scale=1.3,
+            color=color.rgb(*NEON_YELLOW),
             font='VeraMono.ttf',
-            visible=False,                     # hidden until needed
+            visible=False,
         )
 
         # ── Feedback message text (hidden by default) ────────────────── #
         self.message_text = Text(
             text='',
-            position=(0, -0.05),               # just above prompt area
+            position=(0, -0.05),
             origin=(0, 0),
             scale=1.4,
-            color=color.rgb(*NEON_GREEN),      # neon green = success
+            color=color.rgb(*NEON_GREEN),
             font='VeraMono.ttf',
             visible=False,
         )
 
-        # Timer controlling how long the feedback message stays visible
+        # Timer for the feedback message
         self._msg_timer = 0.0
 
     # ------------------------------------------------------------------ #
     #  Registration
     # ------------------------------------------------------------------ #
     def add_interactable(self, interactable):
-        """
-        Register an Interactable so the system starts tracking it.
-
-        Args:
-            interactable : Interactable instance
-        """
+        """Register an Interactable for tracking."""
         self.interactables.append(interactable)
 
     # ------------------------------------------------------------------ #
-    #  Per‑frame update (called automatically by Ursina)
+    #  Update prompt text of a registered interactable
+    # ------------------------------------------------------------------ #
+    def update_prompt(self, entity, new_prompt, new_message=None):
+        """
+        Change the prompt (and optionally message) for an interactable
+        identified by its entity reference.
+
+        Args:
+            entity      : Entity — the 3D object originally registered
+            new_prompt  : str    — replacement prompt text
+            new_message : str or None — replacement message (optional)
+        """
+        for inter in self.interactables:
+            if inter.entity is entity:
+                inter.prompt = new_prompt
+                if new_message is not None:
+                    inter.message = new_message
+                # Also disable the callback so it can't be hacked again
+                inter.callback = None
+                break
+
+    # ------------------------------------------------------------------ #
+    #  Per‑frame update
     # ------------------------------------------------------------------ #
     def update(self):
         """
-        Each frame:
-          1. Find the nearest interactable within range.
-          2. Show / hide the prompt accordingly.
-          3. Count down the feedback message timer.
+        Each frame: find nearest interactable in range, show prompt.
+        Skipped entirely when self.paused is True.
         """
-        # ── Tick message timer ───────────────────────────────────────── #
+        # Tick message timer regardless of pause
         if self._msg_timer > 0:
-            self._msg_timer -= ursina_time.dt     # subtract elapsed time
+            self._msg_timer -= ursina_time.dt
             if self._msg_timer <= 0:
-                self.message_text.visible = False  # hide when timer expires
+                self.message_text.visible = False
 
-        # ── Guard: need a player to check distance ───────────────────── #
+        # Skip proximity logic when paused (hacking panel is open)
+        if self.paused:
+            self.prompt_text.visible = False
+            self._active = None
+            return
+
+        # Guard: need a player
         if self.player_ref is None or self.player_ref.controller is None:
             return
 
-        # Player world position (from the FPS controller)
         player_pos = self.player_ref.controller.position
 
-        # ── Find nearest interactable in range ───────────────────────── #
-        nearest     = None
-        nearest_dist = INTERACT_DISTANCE + 1  # start beyond max range
+        # Find nearest in range
+        nearest      = None
+        nearest_dist = INTERACT_DISTANCE + 1
 
         for inter in self.interactables:
-            dist = distance(player_pos, inter.entity.position)  # 3D dist
+            dist = distance(player_pos, inter.entity.position)
             if dist < INTERACT_DISTANCE and dist < nearest_dist:
                 nearest      = inter
                 nearest_dist = dist
 
-        # ── Update prompt visibility ─────────────────────────────────── #
+        # Update visibility
         if nearest is not None:
             self._active = nearest
-            self.prompt_text.text = nearest.prompt   # e.g. "Press E …"
+            self.prompt_text.text    = nearest.prompt
             self.prompt_text.visible = True
         else:
             self._active = None
             self.prompt_text.visible = False
 
     # ------------------------------------------------------------------ #
-    #  Input handler (called automatically by Ursina)
+    #  Input handler
     # ------------------------------------------------------------------ #
     def input(self, key):
-        """
-        Listen for the interact key.  If an interactable is active,
-        trigger it and display the feedback message.
+        """Handle the interact key. Skipped when paused."""
+        if self.paused:
+            return  # hacking panel is handling input
 
-        Args:
-            key : str — key that was pressed
-        """
         if key == INTERACT_KEY and self._active is not None:
-            # Show feedback message
-            self.message_text.text = self._active.message
+            self.message_text.text    = self._active.message
             self.message_text.visible = True
-            self._msg_timer = INTERACT_MSG_DURATION   # start countdown
+            self._msg_timer = INTERACT_MSG_DURATION
 
-            # Run the optional callback (if any)
             if self._active.callback:
                 self._active.callback()
 
@@ -224,4 +219,4 @@ class InteractionSystem(Entity):
             pass
         self.interactables.clear()
         self.player_ref = None
-        super().destroy()   # remove the Entity itself
+        super().destroy()

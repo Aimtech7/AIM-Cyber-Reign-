@@ -3,8 +3,8 @@
 > A futuristic cyberpunk 3D game built with Python and the Ursina engine.
 
 **Author:** Aimtech
-**Phase:** Phase 2 — Visual Upgrade & Interaction
-**Version:** 0.2.0
+**Phase:** Phase 3 — Hacking Core System
+**Version:** 0.3.0
 
 ---
 
@@ -12,29 +12,21 @@
 
 **AIM: Cyber Reign** is a dark, neon-drenched cyberpunk game set in a
 futuristic digital cityscape. The player navigates a glowing grid-lined
-world filled with towering neon structures, pillars, elevated platforms,
-and interactive cyber terminals.
+world, hacks cyber terminals via a timed key-sequence challenge, and
+progresses through security access levels.
 
-### Current Features (Phase 2)
+### Current Features (Phase 3)
 
-- **Animated main menu** with floating neon particles and Settings button
+- **Animated main menu** with floating particles and Settings button
 - **Settings panel** with volume, sensitivity, and quality controls
-- **First-person movement** with WASD, mouse look, jumping, and **sprinting** (Left Shift)
-- **Expanded 3D world** — buildings, neon pillars, boundary walls, elevated platforms
-- **Interaction system** — walk up to cyber terminals and press E to access them
-- **Expanded HUD** — energy bar, access level, zone name, sprint indicator
+- **First-person movement** with WASD, mouse look, jumping, and sprint
+- **Expanded 3D world** — buildings, pillars, walls, platforms, terminals
+- **Hacking mini-game** — timed key-sequence challenge per terminal
+- **Terminal states** — locked (green) → active (yellow) → breached (cyan)
+- **Game state tracking** — breached count, access level progression
+- **Expanded HUD** — energy, access level, zone, sprint, breached nodes
 - **Scene system** — menu ↔ settings ↔ game transitions
 - **Docker support** for containerised execution
-
----
-
-## 🛠 Tools & Technologies
-
-| Tool / Library | Purpose |
-|---|---|
-| **Python 3.11+** | Core language |
-| **Ursina** | 3D game engine (built on Panda3D) |
-| **Docker** | Containerisation for reproducible builds |
 
 ---
 
@@ -43,22 +35,18 @@ and interactive cyber terminals.
 ```
 cyberpunk_game/
 ├── main.py                # Entry point
-├── requirements.txt       # Python dependencies
-├── Dockerfile             # Container recipe
+├── requirements.txt
+├── Dockerfile
 ├── .dockerignore
-├── README.md
-├── GAME_STRUCTURE.md      # Architecture docs
-├── AI_PROGRESS.md         # AI tracking log
+├── README.md, GAME_STRUCTURE.md, AI_PROGRESS.md
 ├── src/
-│   ├── __init__.py
-│   ├── config.py          # All constants
-│   ├── menu.py            # Animated main menu
-│   ├── settings.py        # Settings panel
-│   ├── player.py          # FPS controller + sprint
-│   ├── environment.py     # Full 3D world
-│   ├── ui.py              # Expanded HUD
-│   ├── scenes.py          # Scene manager
-│   └── interaction.py     # Interaction framework
+│   ├── __init__.py, config.py
+│   ├── menu.py, settings.py
+│   ├── player.py, environment.py
+│   ├── ui.py, scenes.py
+│   ├── interaction.py
+│   ├── game_state.py       # Phase 3
+│   └── hacking.py          # Phase 3
 ├── assets/{textures,models,audio,fonts}/
 └── docs/phase_notes.md
 ```
@@ -67,20 +55,8 @@ cyberpunk_game/
 
 ## 🚀 Setup & Run
 
-### Prerequisites
-
-- Python 3.11 or newer
-- pip
-
-### Install Dependencies
-
 ```bash
 pip install -r requirements.txt
-```
-
-### Run Locally
-
-```bash
 python main.py
 ```
 
@@ -92,28 +68,16 @@ python main.py
 | Mouse | Look around |
 | Space | Jump |
 | Left Shift | Sprint |
-| E | Interact with terminals |
-| ESC | Return to menu |
+| E | Interact / Hack terminals |
+| ESC | Return to menu (or abort hack) |
 
 ---
 
 ## 🐳 Docker
 
-### Build the Image
-
 ```bash
 docker build -t aim-cyber-reign .
-```
-
-### Run the Container
-
-```bash
-# Linux / WSL with X11:
-xhost +local:docker
 docker run -e DISPLAY=$DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix aim-cyber-reign
-
-# Windows with VcXsrv:
-docker run -e DISPLAY=host.docker.internal:0 aim-cyber-reign
 ```
 
 ---
@@ -123,13 +87,13 @@ docker run -e DISPLAY=host.docker.internal:0 aim-cyber-reign
 | Phase | Status | Focus |
 |---|---|---|
 | **1 — Foundation** | ✅ | Structure, menu, player, environment, HUD, Docker |
-| **2 — Visual Upgrade** | ✅ | Animated menu, settings, sprint, expanded world, interaction, HUD |
-| 3 — Combat | 🔲 | Weapons, shooting, hit detection |
-| 4 — Enemies | 🔲 | AI opponents, patrol, combat AI |
-| 5 — Missions | 🔲 | Objectives, quests, hacking mini-games |
-| 6 — Inventory | 🔲 | Items, pickups, equipment |
-| 7 — Audio | 🔲 | SFX, ambient music, UI audio |
-| 8 — Polish | 🔲 | Particles, post-processing, save/load |
+| **2 — Visual Upgrade** | ✅ | Animated menu, settings, sprint, expanded world |
+| **3 — Hacking Core** | ✅ | Mini-game, terminal states, game state tracking |
+| 4 — Enemy AI & Combat | 🔲 | Opponents, weapons, damage |
+| 5 — Missions | 🔲 | Objectives, quests |
+| 6 — Inventory | 🔲 | Items, equipment |
+| 7 — Audio | 🔲 | SFX, music |
+| 8 — Polish | 🔲 | VFX, save/load |
 
 ---
 

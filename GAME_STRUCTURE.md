@@ -10,24 +10,12 @@
 |---|---|
 | **Name** | AIM: Cyber Reign |
 | **Author** | Aimtech |
-| **Genre** | Cyberpunk / Sci-Fi / First-Person Exploration |
-| **Concept** | A dark, neon-lit futuristic world where the player navigates a digital cityscape, interacts with cyber terminals, and prepares for combat missions. |
+| **Genre** | Cyberpunk / Sci-Fi / First-Person Exploration & Hacking |
+| **Concept** | A dark, neon-lit futuristic world where the player navigates a digital cityscape, hacks cyber terminals via a key-sequence mini-game, and progresses through access levels. |
 | **Engine** | Ursina (Python, built on Panda3D) |
 | **Language** | Python 3.11+ |
 | **Container** | Docker (python:3.11-slim base) |
-| **Current Phase** | Phase 2 — Visual Upgrade & Interaction |
-
----
-
-## 🛠 Tools & Libraries
-
-| Tool | Role |
-|---|---|
-| Python 3.11+ | Core programming language |
-| Ursina | 3D game engine — rendering, physics, input, UI |
-| Panda3D | Low-level 3D backend (wrapped by Ursina) |
-| Docker | Application containerisation |
-| pip | Python package manager |
+| **Current Phase** | Phase 3 — Hacking Core System |
 
 ---
 
@@ -50,8 +38,10 @@ cyberpunk_game/
 │   ├── environment.py
 │   ├── ui.py
 │   ├── scenes.py
-│   ├── settings.py         ← new in Phase 2
-│   └── interaction.py      ← new in Phase 2
+│   ├── settings.py
+│   ├── interaction.py
+│   ├── game_state.py        ← new in Phase 3
+│   └── hacking.py           ← new in Phase 3
 ├── assets/
 │   ├── textures/
 │   ├── models/
@@ -70,85 +60,94 @@ cyberpunk_game/
 | File | Purpose |
 |---|---|
 | `main.py` | Entry point — initialises Ursina, creates SceneManager, starts event loop |
-| `requirements.txt` | Lists Python dependencies (currently: `ursina`) |
-| `Dockerfile` | Container build recipe — installs OS deps + Python deps, runs main.py |
-| `.dockerignore` | Excludes caches, venvs, and IDE files from Docker builds |
-| `README.md` | User-facing project overview, setup guide, run instructions |
-| `GAME_STRUCTURE.md` | This file — deep architecture documentation |
-| `AI_PROGRESS.md` | Step-by-step tracking log for AI-assisted development |
+| `requirements.txt` | Python dependencies (`ursina`) |
+| `Dockerfile` | Container build — OS deps + Python deps, runs main.py |
+| `.dockerignore` | Excludes caches, venvs, IDE files |
+| `README.md` | User-facing overview, setup, run instructions |
+| `GAME_STRUCTURE.md` | This file — architecture documentation |
+| `AI_PROGRESS.md` | Step-by-step AI development log |
 
 ### src/ Package
 
 | File | Purpose |
 |---|---|
-| `__init__.py` | Marks `src/` as a Python package; exposes metadata |
-| `config.py` | All global constants: window, colours, player, sprint, interaction, environment specs, HUD defaults, menu particles, metadata |
-| `menu.py` | `MainMenu` class — animated particles, title, subtitle, version tag, Start/Settings/Exit buttons with neon hover effects |
-| `player.py` | `PlayerController` (Entity subclass) — WASD + mouse look + Left Shift sprint with per-frame speed adjustment |
-| `environment.py` | `GameEnvironment` class — floor grid, 12 buildings, 8 pillars, 4 walls, 5 platforms, 4 interactive terminals, lighting |
-| `ui.py` | `HUD` (Entity subclass) — "SYSTEM ONLINE", energy bar, access level, zone name, dynamic sprint indicator |
-| `scenes.py` | `SceneManager` class — orchestrates menu / settings / game transitions, wires interaction system to environment and player ref to HUD |
-| `settings.py` | `SettingsMenu` class — volume slider, sensitivity slider, quality buttons (Low/Medium/High), Back button (visual placeholders) |
-| `interaction.py` | `Interactable` data class + `InteractionSystem` (Entity subclass) — proximity detection, "Press E" prompts, timed feedback messages, callback support |
-
-### assets/
-
-Reserved directories for future game resources:
-
-| Subdirectory | Planned Content |
-|---|---|
-| `textures/` | Diffuse maps, normal maps, UI sprites |
-| `models/` | 3D meshes (.obj, .glb) |
-| `audio/` | Sound effects, music tracks |
-| `fonts/` | Custom TTF/OTF fonts |
-
-### docs/
-
-| File | Purpose |
-|---|---|
-| `phase_notes.md` | Design notes and decisions for each development phase |
+| `__init__.py` | Package init; project metadata |
+| `config.py` | All constants: window, colours, player, sprint, interaction, environment, hacking, HUD, metadata |
+| `menu.py` | `MainMenu` — animated particles, title, Start/Settings/Exit buttons |
+| `player.py` | `PlayerController` — WASD + mouse look + sprint (Left Shift) |
+| `environment.py` | `GameEnvironment` — floor, buildings, pillars, walls, platforms, hackable terminals with state colours |
+| `ui.py` | `HUD` — system status, energy, access level, zone, sprint indicator, breached node count |
+| `scenes.py` | `SceneManager` — menu/settings/game transitions, hacking flow orchestration |
+| `settings.py` | `SettingsMenu` — volume, sensitivity, quality (visual placeholders) |
+| `interaction.py` | `Interactable` + `InteractionSystem` — proximity, prompts, pause support |
+| `game_state.py` | `GameState` — tracks breached terminals, access level progression, stats API |
+| `hacking.py` | `HackingPanel` — key-sequence mini-game, timer, success/failure callbacks |
 
 ---
 
 ## 🎮 Game Systems
 
 ### Scene System
-The `SceneManager` handles three scenes: **Menu**, **Settings**, and **Game**. Each scene is a collection of objects created on entry and destroyed on exit. A state dictionary tracks live objects, and `_destroy_keys()` handles cleanup.
+`SceneManager` handles three scenes: **Menu**, **Settings**, **Game**. State dictionary tracks live objects; `_destroy_keys()` cleans up on transitions.
 
-### Interaction System
-`InteractionSystem` runs every frame, checking the distance between the player and all registered `Interactable` objects. When the player is within `INTERACT_DISTANCE`, a prompt appears. Pressing the interact key triggers a message and an optional callback. Currently used by cyber terminals; designed for doors, loot, NPCs in future.
+### Hacking System (Phase 3)
+Complete gameplay loop:
+1. Player approaches a terminal → "Press E to hack [name]"
+2. Press E → Player freezes, mouse unlocks, hacking panel opens
+3. Panel shows terminal name, security level, and a random key sequence
+4. Player presses keys in order; correct → highlight; wrong → penalty roll-back
+5. Timer counts down (12s); bar changes colour (cyan → yellow → magenta)
+6. **Success** → terminal marked breached (cyan glow), access level may increase, prompt becomes "BREACHED"
+7. **Failure / timeout** → terminal reverts to locked (green glow), can retry
+8. **ESC** → abort without penalty
+9. Player unfreezes, interaction system resumes
+
+### Terminal States
+| State | Glow Colour | Cause |
+|---|---|---|
+| Locked | Green | Default — hackable |
+| Active | Yellow | Hack in progress |
+| Breached | Cyan | Successfully hacked |
+
+### Game State Tracking
+`GameState` tracks:
+- `total_terminals` — count from config
+- `breached_labels` — set of hacked terminal names
+- `access_level` — starts at 1, increases by 1 every 2 breaches
 
 ### Sprint System
-`PlayerController` subclasses `Entity` so its `update()` runs each frame. Holding Left Shift multiplies the base walk speed by `PLAYER_SPRINT_MULTIPLIER`. The `is_sprinting` flag is read by the HUD to display a sprint indicator.
+`PlayerController.update()` checks `held_keys['left shift']` each frame. Speed multiplies by 1.8× while held.
+
+### Interaction System
+Proximity-based with pause support. During hacking, `paused=True` freezes all proximity checks and input handling. `update_prompt()` permanently marks breached terminals.
 
 ### HUD System
-The expanded HUD shows two columns: left (system status, energy bar, access level) and right (zone name, sprint indicator). The energy bar is a scaled quad. Values are currently config defaults; they will become dynamic when gameplay systems are implemented.
-
-### Settings System
-The settings panel shows sliders for volume and mouse sensitivity, plus quality preset buttons. Controls are visual placeholders; logic will be connected when the options system is implemented.
+Two columns: left (status, energy, access level, breached count) and right (zone, sprint, target). Reads `GameState.get_stats()` each frame for live updates.
 
 ---
 
 ## 🏃 How to Run
 
 ### Locally
-
 ```bash
 pip install -r requirements.txt
 python main.py
 ```
 
-### In Docker
+### Controls
+| Key | Action |
+|---|---|
+| W / A / S / D | Move |
+| Mouse | Look around |
+| Space | Jump |
+| Left Shift | Sprint |
+| E | Interact / Hack terminals |
+| ESC | Return to menu (or abort hack) |
 
+### In Docker
 ```bash
 docker build -t aim-cyber-reign .
-
-# Linux / WSL with X11:
-xhost +local:docker
 docker run -e DISPLAY=$DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix aim-cyber-reign
-
-# Windows with VcXsrv:
-docker run -e DISPLAY=host.docker.internal:0 aim-cyber-reign
 ```
 
 ---
@@ -157,37 +156,35 @@ docker run -e DISPLAY=host.docker.internal:0 aim-cyber-reign
 
 | Phase | Status | Focus |
 |---|---|---|
-| **1 — Foundation** | ✅ Complete | Structure, menu, player, environment, HUD, Docker, docs |
-| **2 — Visual Upgrade & Interaction** | ✅ Complete | Animated menu, settings, sprint, expanded world, interaction system, HUD expansion |
-| 3 — Combat | 🔲 Planned | Weapons, shooting, hit detection |
-| 4 — Enemies | 🔲 Planned | AI opponents, patrol, combat AI |
-| 5 — Missions | 🔲 Planned | Objectives, quests, hacking mini-games |
-| 6 — Inventory | 🔲 Planned | Items, pickups, equipment |
-| 7 — Audio | 🔲 Planned | SFX, ambient music, UI audio |
-| 8 — Polish | 🔲 Planned | Particles, post-processing, save/load |
+| **1 — Foundation** | ✅ | Structure, menu, player, environment, HUD, Docker |
+| **2 — Visual Upgrade** | ✅ | Animated menu, settings, sprint, expanded world, interaction |
+| **3 — Hacking Core** | ✅ | Key-sequence mini-game, terminal states, game state tracking |
+| 4 — Enemy AI & Combat | 🔲 | Opponents, weapons, damage |
+| 5 — Missions | 🔲 | Objectives, quests |
+| 6 — Inventory | 🔲 | Items, equipment |
+| 7 — Audio | 🔲 | SFX, music |
+| 8 — Polish | 🔲 | Particles, save/load |
 
 ---
 
 ## 📐 Coding Conventions
 
-1. **One class per file** — each module owns a single responsibility.
-2. **Config-driven** — no magic numbers; all tunables live in `config.py`.
-3. **Comment everything** — every meaningful line has an inline comment; every function and class has a docstring.
-4. **Cleanup pattern** — every scene object class exposes a `destroy()` method that removes all its entities.
-5. **Imports at the top** — standard lib → engine → project, separated by blank lines.
-6. **Snake_case** for variables and functions, **PascalCase** for classes.
+1. One class per file — single responsibility.
+2. Config-driven — all tunables in `config.py`.
+3. Comment everything — inline + docstrings.
+4. Cleanup pattern — `destroy()` on every scene object.
+5. Snake_case variables, PascalCase classes.
 
 ---
 
 ## 🤖 AI Collaboration Rules
 
-1. After every major step, update `AI_PROGRESS.md` with what was done.
-2. Never leave placeholder or broken imports.
-3. Always check that new code compiles (`py_compile`) before marking a step complete.
-4. Follow the file layout described above — do not create files outside this structure.
-5. Use `config.py` for any new constants; do not hard-code values in logic files.
-6. Keep `main.py` minimal — all logic goes into `src/` modules.
-7. Write beginner-friendly comments on every new line of code.
+1. Update `AI_PROGRESS.md` after every major step.
+2. Never leave broken imports.
+3. `py_compile` all files before marking complete.
+4. Use `config.py` for new constants.
+5. Keep `main.py` minimal.
+6. Write beginner-friendly comments.
 
 ---
 

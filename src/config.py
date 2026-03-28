@@ -197,15 +197,17 @@ PLATFORM_SPECS = [
 
 
 # ──────────────────────────────────────────────────────────────────────── #
-#  Terminal / Interactable Specifications  (Phase 2)
+#  Terminal / Interactable Specifications  (Phase 2 → expanded Phase 3)
 # ──────────────────────────────────────────────────────────────────────── #
-# Cyber terminals the player can interact with: (x, z, label)
+# Cyber terminals: (x, z, label, security_level)
+# security_level determines how many keys the hack sequence requires:
+#   1 → 4 keys,  2 → 5 keys,  3 → 6 keys
 
 TERMINAL_SPECS = [
-    ( 6,  -6,  "Access Node Alpha"),
-    (-6,   6,  "Access Node Beta"),
-    ( 0,  -14, "Data Terminal Gamma"),
-    ( 12,  0,  "Relay Point Delta"),
+    ( 6,  -6,  "Access Node Alpha",    1),
+    (-6,   6,  "Access Node Beta",     1),
+    ( 0,  -14, "Data Terminal Gamma",  2),
+    ( 12,  0,  "Relay Point Delta",    3),
 ]
 
 
@@ -249,11 +251,37 @@ MENU_PARTICLE_SPEED = (0.2, 0.8)
 
 
 # ──────────────────────────────────────────────────────────────────────── #
+#  Hacking System Settings  (Phase 3)
+# ──────────────────────────────────────────────────────────────────────── #
+
+# Keys the player can be asked to press during a hack sequence
+HACK_KEY_POOL = ['w', 'a', 's', 'd', 'q', 'r', 'f']
+
+# Base sequence length for security level 1 (level N adds N‑1 extra keys)
+HACK_BASE_LENGTH = 4
+
+# How many seconds the player has to complete the entire sequence
+HACK_TIME_LIMIT = 12.0
+
+# Penalty: how many correct keys are lost on a wrong key press
+HACK_WRONG_PENALTY = 1
+
+# Colours for the hacking panel backdrop
+HACK_PANEL_BG     = (8, 5, 20)
+HACK_PANEL_BORDER = NEON_CYAN
+
+# Terminal glow colours per state
+TERMINAL_COLOR_LOCKED   = NEON_GREEN       # default — hackable
+TERMINAL_COLOR_ACTIVE   = (255, 200, 0)    # yellow — hack in progress
+TERMINAL_COLOR_BREACHED = NEON_CYAN        # cyan — already hacked
+
+
+# ──────────────────────────────────────────────────────────────────────── #
 #  Metadata
 # ──────────────────────────────────────────────────────────────────────── #
 
 # Project metadata used by documentation generators and splash screens
 PROJECT_NAME    = "AIM: Cyber Reign"
 PROJECT_AUTHOR  = "Aimtech"
-PROJECT_VERSION = "0.2.0"
-PROJECT_PHASE   = "Phase 2 — Visual Upgrade & Interaction"
+PROJECT_VERSION = "0.3.0"
+PROJECT_PHASE   = "Phase 3 — Hacking Core System"
