@@ -64,6 +64,9 @@ class GameState:
         self.alert_level       = ALERT_LEVEL_CALM   # derived level
         self._alert_decay      = 0.0   # countdown timer
 
+        # ── Inventory integration (Phase 6) ──────────────────────────── #
+        self.hack_boost_active = False   # set True by Hack Booster item
+
     # ================================================================== #
     #  TERMINAL METHODS  (Phase 3 — unchanged)
     # ================================================================== #
@@ -107,6 +110,17 @@ class GameState:
         self.health = max(0.0, self.health - amount)
         self._damage_cooldown = PLAYER_REGEN_DELAY   # reset regen delay
         return self.health > 0
+
+    def heal(self, amount):
+        """
+        Restore player health by *amount*.  Clamps at max.
+
+        Args:
+            amount : float — HP to add.
+
+        Phase 6 — called by EnergyCellItem.
+        """
+        self.health = min(PLAYER_MAX_HEALTH, self.health + amount)
 
     def is_alive(self):
         """Check if the player still has health remaining."""
@@ -202,3 +216,4 @@ class GameState:
         self.alert_accumulator = 0.0
         self.alert_level       = ALERT_LEVEL_CALM
         self._alert_decay      = 0.0
+        self.hack_boost_active = False   # Phase 6 — reset boost flag

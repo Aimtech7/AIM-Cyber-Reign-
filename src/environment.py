@@ -44,8 +44,10 @@ from src.config import (
     EXTRACTION_ZONE_COLOR,
     MISSION_TARGET_COLOR,
     MISSION_REQUIRED_TERMINALS,
+    ITEM_PICKUP_SPECS,           # Phase 6 — item spawn points
 )
 from src.interaction import Interactable
+from src.inventory import ItemPickup   # Phase 6 — pickup entities
 
 
 # ══════════════════════════════════════════════════════════════════════════ #
@@ -71,6 +73,7 @@ class GameEnvironment:
         self._extraction_cb     = extraction_callback
         self.terminal_parts     = {}
         self.extraction_ring    = None   # pulsing ring Entity
+        self.item_pickups       = []     # Phase 6 — ItemPickup entities
 
         self._build_floor()
         self._build_buildings()
@@ -79,6 +82,7 @@ class GameEnvironment:
         self._build_platforms()
         self._build_terminals()
         self._build_extraction_zone()   # Phase 5
+        self._build_item_pickups()      # Phase 6
         self._build_lighting()
 
     # ================================================================== #
@@ -282,6 +286,22 @@ class GameEnvironment:
         parts['accent'].color = clr
 
     # ================================================================== #
+    #  ITEM PICKUPS  (Phase 6)
+    # ================================================================== #
+    def _build_item_pickups(self):
+        """
+        Spawn item pickup entities at positions from ITEM_PICKUP_SPECS.
+        Each pickup is an ItemPickup that bobs and glows in the world.
+        """
+        for x, z, item_type in ITEM_PICKUP_SPECS:
+            pickup = ItemPickup(
+                position=(x, z),           # world x, z coordinates
+                item_type=item_type,       # which item this gives
+            )
+            self.item_pickups.append(pickup)   # track for proximity check
+            self.entities.append(pickup)       # track for cleanup
+
+    # ================================================================== #
     #  LIGHTING
     # ================================================================== #
     def _build_lighting(self):
@@ -303,3 +323,4 @@ class GameEnvironment:
         self.entities.clear()
         self.terminal_parts.clear()
         self.extraction_ring = None
+        self.item_pickups.clear()   # Phase 6 — clear pickup refs

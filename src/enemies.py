@@ -41,19 +41,22 @@ from ursina import (
 
 # ── Project imports ────────────────────────────────────────────────────── #
 from src.config import (
-    DRONE_PATROL_RADIUS,
-    DRONE_DETECT_RADIUS,
-    DRONE_DAMAGE_RADIUS,
-    DRONE_PATROL_SPEED,
-    DRONE_CHASE_SPEED,
-    DRONE_BOB_SPEED,
-    DRONE_BOB_AMOUNT,
-    DRONE_ALERT_TIMEOUT,
-    DRONE_DAMAGE_PER_SEC,
     DRONE_COLOR_IDLE,
     DRONE_COLOR_SUSPICIOUS,
     DRONE_COLOR_ALERT,
+    DRONE_PATROL_SPEED,
+    DRONE_CHASE_SPEED,
+    DRONE_DETECT_RADIUS,
+    DRONE_DAMAGE_RADIUS,
+    DRONE_DAMAGE_PER_SEC,
+    DRONE_BOB_SPEED,
+    DRONE_BOB_AMOUNT,
+    DRONE_ALERT_TIMEOUT,
     ALERT_LEVEL_ALERT,
+    # Phase 7 — drone SFX constants
+    SFX_DRONE_ALERT,
+    SFX_DRONE_CHASE,
+    SFX_DRONE_HIT,
 )
 
 
@@ -82,7 +85,7 @@ class SecurityDrone(Entity):
         drone.destroy()
     """
 
-    def __init__(self, spawn_pos, player_ref, game_state):
+    def __init__(self, spawn_pos, player_ref, game_state, audio_manager=None):
         """Build the drone visuals and initialise AI state."""
         # Initialise the Entity base — dark body cube
         super().__init__(
@@ -96,6 +99,7 @@ class SecurityDrone(Entity):
         self.player_ref = player_ref       # for distance / position checks
         self.game_state = game_state       # for damage + alert escalation
         self.spawn_pos  = Vec3(*spawn_pos) # home position to return to
+        self._audio     = audio_manager    # Phase 7 — audio manager
 
         # ── Glowing ring underneath (visual indicator) ───────────────── #
         self.glow_ring = Entity(
@@ -124,6 +128,13 @@ class SecurityDrone(Entity):
         self._suspicious_timer = 0.0       # time in suspicious before alert
         self._bob_phase     = random.uniform(0, math.pi * 2)  # bob offset
         self._base_y        = spawn_pos[1]  # nominal hover height
+
+        # ── EMP disable state (Phase 6) ───────────────────────────── #
+        self.emp_disabled = False          # True when hit by EMP
+        self._emp_timer   = 0.0            # countdown before reactivation
+
+        # ── Audio throttle (Phase 7) ─────────────────────────────── #
+        self._hit_sfx_cooldown = 0.0       # prevents hit spam
 
         # Pick an initial patrol target
         self._pick_patrol_target()
@@ -162,6 +173,16 @@ class SecurityDrone(Entity):
     def update(self):
         """Per‑frame AI: detect player, switch states, move, damage."""
         dt = ursina_time.dt  # seconds since last frame
+
+        # ── EMP disable check (Phase 6) ───────────────────────────── #
+        if self.emp_disabled:
+            self._emp_timer -= dt
+            if self._emp_timer <= 0:
+                # EMP effect expired — reactivate drone
+                self.emp_disabled = False
+                self.state = STATE_IDLE
+                self._set_state_color()   # restore normal colour
+            return   # skip all AI while disabled
 
         # Guard — need a player with a controller
         if (self.player_ref is None
@@ -213,6 +234,9 @@ class SecurityDrone(Entity):
             self.state = STATE_SUSPICIOUS
             self._suspicious_timer = 0.0
             self._set_state_color()
+            # Phase 7 — detection alert sound
+            if self._audio:
+                self._audio.play_sfx(SFX_DRONE_ALERT)
 
     # ================================================================== #
     #  SUSPICIOUS behaviour
@@ -238,6 +262,9 @@ class SecurityDrone(Entity):
             self.state = STATE_ALERT
             self._alert_timer = DRONE_ALERT_TIMEOUT
             self._set_state_color()
+            # Phase 7 — alert escalation sound
+            if self._audio:
+                self._audio.play_sfx(SFX_DRONE_CHASE)
             # Raise global alert if not already high
             if self.game_state.alert_level < ALERT_LEVEL_ALERT:
                 self.game_state.raise_alert(0.6)
@@ -258,9 +285,14 @@ class SecurityDrone(Entity):
         # Maintain hover height roughly
         self.y = max(self._base_y - 1, self.y)
 
-        # ── Deal damage if close ─────────────────────────────────────── #
+        # ── Deal damage if close ───────────────────────────────────── #
         if dist < DRONE_DAMAGE_RADIUS:
             self.game_state.take_damage(DRONE_DAMAGE_PER_SEC * dt)
+            # Phase 7 — throttled hit sound (max 1/sec)
+            self._hit_sfx_cooldown -= dt
+            if self._hit_sfx_cooldown <= 0 and self._audio:
+                self._audio.play_sfx(SFX_DRONE_HIT)
+                self._hit_sfx_cooldown = 1.0   # reset cooldown
 
         # ── Check if player escaped ──────────────────────────────────── #
         if dist > DRONE_DETECT_RADIUS * 1.5:
@@ -273,6 +305,23 @@ class SecurityDrone(Entity):
         else:
             # Player still in range — keep chasing
             self._alert_timer = DRONE_ALERT_TIMEOUT
+
+    # ================================================================== #
+    #  EMP DISABLE  (Phase 6)
+    # ================================================================== #
+    def apply_emp(self, duration):
+        """
+        Disable this drone for *duration* seconds.
+
+        Args:
+            duration : float — how long the drone stays disabled.
+        """
+        self.emp_disabled = True       # freeze AI
+        self._emp_timer   = duration   # countdown
+        self.state = STATE_IDLE        # reset to idle state
+        # Visual: grey out the glow ring while disabled
+        self.glow_ring.color = color.rgb(60, 60, 60)   # dim grey
+        self.antenna.color   = color.rgb(60, 60, 60)   # dim grey
 
     # ================================================================== #
     #  CLEANUP

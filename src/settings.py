@@ -38,6 +38,7 @@ from src.config import (
     NEON_MAGENTA,
     SETTINGS_BG,
     BUTTON_COLOR,
+    SFX_CLICK,   # Phase 7 — click sound constant
 )
 
 
@@ -57,13 +58,17 @@ class SettingsMenu:
         settings.destroy()
     """
 
-    def __init__(self, back_callback):
+    def __init__(self, back_callback, audio_manager=None):
         """
         Build the settings panel UI.
 
         Args:
             back_callback : called when "BACK" is clicked.
+            audio_manager : AudioManager (Phase 7) — optional
         """
+        # Store audio reference (Phase 7)
+        self._audio = audio_manager
+        self._back_callback = back_callback
         # Master list of every UI entity — used by destroy()
         self.elements = []
 
@@ -120,6 +125,8 @@ class SettingsMenu:
             color=color.rgb(*BUTTON_COLOR),
             knob_color=color.rgb(*NEON_MAGENTA),
         )
+        # Phase 7 — wire volume slider to audio manager
+        vol_slider.on_value_changed = self._on_volume_changed
         self.elements.append(vol_slider)
 
         # ── Sensitivity slider ───────────────────────────────────────── #
@@ -176,7 +183,7 @@ class SettingsMenu:
 
         # ── "Note: placeholder" reminder ─────────────────────────────── #
         note = Text(
-            text='* Settings are visual previews — logic coming soon',
+            text='* Drag volume slider to adjust game audio',
             parent=camera.ui,
             position=(0, -0.12),
             origin=(0, 0),
@@ -196,10 +203,33 @@ class SettingsMenu:
             highlight_color=color.rgb(*NEON_MAGENTA),
             pressed_color=color.rgb(*NEON_PURPLE),
             text_color=color.rgb(*NEON_CYAN),
-            on_click=back_callback,
+            on_click=self._on_back_click,   # Phase 7 — wrapped callback
         )
         back_btn.text_entity.font = 'VeraMono.ttf'
         self.elements.append(back_btn)
+
+    # ------------------------------------------------------------------ #
+    #  Volume slider callback  (Phase 7)
+    # ------------------------------------------------------------------ #
+    def _on_volume_changed(self):
+        """Update master volume when the slider moves."""
+        if self._audio:
+            # Slider value is 0–100 → convert to 0.0–1.0
+            # Access the slider value from the elements list
+            for el in self.elements:
+                if isinstance(el, Slider) and hasattr(el, 'value'):
+                    self._audio.set_volume('master', el.value / 100.0)
+                    break
+
+    # ------------------------------------------------------------------ #
+    #  Back button with SFX  (Phase 7)
+    # ------------------------------------------------------------------ #
+    def _on_back_click(self):
+        """Play click sound then return to menu."""
+        if self._audio:
+            self._audio.play_sfx(SFX_CLICK)
+        if self._back_callback:
+            self._back_callback()
 
     # ------------------------------------------------------------------ #
     #  Cleanup

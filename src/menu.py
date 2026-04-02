@@ -47,6 +47,7 @@ from src.config import (
     BUTTON_COLOR,
     MENU_PARTICLE_COUNT,
     MENU_PARTICLE_SPEED,
+    SFX_CLICK,         # Phase 7 — button click sound name
 )
 
 
@@ -122,7 +123,8 @@ class MainMenu:
         menu.destroy()
     """
 
-    def __init__(self, start_callback, settings_callback, exit_callback):
+    def __init__(self, start_callback, settings_callback, exit_callback,
+                 audio_manager=None):
         """
         Build every visual element of the main menu.
 
@@ -130,7 +132,10 @@ class MainMenu:
             start_callback    : called when "START GAME" is clicked
             settings_callback : called when "SETTINGS" is clicked
             exit_callback     : called when "EXIT" is clicked
+            audio_manager     : AudioManager (Phase 7) — optional
         """
+        # Store audio reference for button clicks (Phase 7)
+        self._audio = audio_manager
         # Master list of all UI entities — used by destroy()
         self.elements = []
 
@@ -185,7 +190,7 @@ class MainMenu:
 
         # ── Version tag ──────────────────────────────────────────────── #
         version = Text(
-            text='v0.2.0  //  Phase 2',
+            text='v0.7.0  //  Phase 7',
             parent=camera.ui,
             position=(0, 0.14),
             origin=(0, 0),
@@ -248,10 +253,20 @@ class MainMenu:
             highlight_color=color.rgb(*NEON_MAGENTA),
             pressed_color=color.rgb(*NEON_PURPLE),
             text_color=color.rgb(*NEON_CYAN),
-            on_click=callback,
+            on_click=lambda cb=callback: self._on_btn_click(cb),  # Phase 7
         )
         btn.text_entity.font = 'VeraMono.ttf'
         self.elements.append(btn)
+
+    # ------------------------------------------------------------------ #
+    #  Button click with SFX  (Phase 7)
+    # ------------------------------------------------------------------ #
+    def _on_btn_click(self, callback):
+        """Play click sound then fire the original callback."""
+        if self._audio:
+            self._audio.play_sfx(SFX_CLICK)   # Phase 7 — click SFX
+        if callback:
+            callback()
 
     # ------------------------------------------------------------------ #
     #  Cleanup

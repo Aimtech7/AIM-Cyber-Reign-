@@ -1,10 +1,12 @@
 """
-ui.py — Heads‑Up Display (HUD) Module (Phase 5)
+ui.py — Heads‑Up Display (HUD) Module (Phase 6)
 ==================================================
 Project : AIM: Cyber Reign
 Author  : Aimtech
-Purpose : In‑game overlay.  Phase 5 adds mission panel
-          (title, objective, progress, status, feedback messages).
+Purpose : In‑game overlay.  Phase 6 adds:
+            • Inventory panel (toggle with TAB)
+            • Equipment slot display (Q / R)
+            • Item pickup feedback messages
 """
 
 # ── Ursina engine ──────────────────────────────────────────────────────── #
@@ -16,6 +18,7 @@ from src.config import (
     HUD_SECONDARY, PROJECT_NAME, PROJECT_VERSION,
     HUD_DEFAULT_ZONE, PLAYER_MAX_HEALTH,
     ALERT_LABELS, ALERT_COLORS,
+    INVENTORY_PANEL_BG,          # Phase 6 — panel background colour
 )
 
 
@@ -26,17 +29,37 @@ class HUD(Entity):
     """
     In‑game HUD with:
       Left   : system status, access level, breached nodes
-      Right  : zone, sprint, alert, health
+      Right  : zone, sprint, alert, health, equipment slots
       Bottom : mission panel (Phase 5)
-      Centre : detection warning, mission feedback
+      Centre : detection warning, mission feedback, item messages
+      Overlay: inventory panel (Phase 6 — toggled with TAB)
     """
 
-    def __init__(self, player_ref=None, game_state=None, mission_manager=None):
+    def __init__(self, player_ref=None, game_state=None,
+                 mission_manager=None, inventory=None,
+                 equipment_manager=None):
+        """
+        Create the HUD.
+
+        Args:
+            player_ref        : PlayerController
+            game_state        : GameState
+            mission_manager   : MissionManager
+            inventory         : Inventory      (Phase 6)
+            equipment_manager : EquipmentManager (Phase 6)
+        """
         super().__init__()
-        self.player_ref      = player_ref
-        self.game_state      = game_state
-        self.mission_manager = mission_manager
-        self.elements        = []
+        self.player_ref        = player_ref
+        self.game_state        = game_state
+        self.mission_manager   = mission_manager
+        self.inventory         = inventory           # Phase 6
+        self.equipment_manager = equipment_manager   # Phase 6
+        self.elements          = []
+
+        # Inventory panel visibility state (Phase 6)
+        self._inv_panel_visible = False
+        self._inv_elements      = []   # UI elements for the inventory overlay
+        self._item_msg_timer    = 0.0  # item feedback message timer
 
         left_x  = -0.85
         right_x =  0.55
@@ -96,8 +119,21 @@ class HUD(Entity):
                                 font='VeraMono.ttf', visible=False)
         self.elements.append(self.mission_msg)
 
+        # ── BOTTOM-RIGHT: Equipment slots (Phase 6) ─────────────────── #
+        self._t('─' * 16, right_x, 0.14, 0.8, (0, 200, 200))
+        self._t('EQUIPMENT', right_x, 0.11, 0.9, HUD_SECONDARY)
+        self.equip_q_text = self._t('[Q] ---', right_x, 0.07, 0.85, NEON_CYAN)
+        self.equip_r_text = self._t('[R] ---', right_x, 0.03, 0.85, NEON_CYAN)
+
+        # ── CENTRE: Item feedback message (Phase 6) ──────────────────── #
+        self.item_msg = Text(text='', position=(0, -0.25), origin=(0, 0),
+                             scale=1.3, color=color.rgb(*NEON_GREEN),
+                             font='VeraMono.ttf', visible=False)
+        self.elements.append(self.item_msg)
+
     # ------------------------------------------------------------------ #
     def _t(self, text, x, y, scale, clr):
+        """Create a Text element and track it for cleanup."""
         c = color.rgb(*clr) if isinstance(clr, tuple) else clr
         t = Text(text=text, position=(x, y), scale=scale,
                  color=c, font='VeraMono.ttf')
@@ -105,8 +141,129 @@ class HUD(Entity):
         return t
 
     # ------------------------------------------------------------------ #
+    def show_item_message(self, text, duration=2.0):
+        """
+        Show a brief item‑related feedback message.
+
+        Args:
+            text     : str   — message to display (e.g. "Picked up Energy Cell")
+            duration : float — how long to show (seconds)
+        """
+        self.item_msg.text    = text
+        self.item_msg.visible = True
+        self._item_msg_timer  = duration
+
+    # ================================================================== #
+    #  INVENTORY PANEL  (Phase 6 — toggled with TAB)
+    # ================================================================== #
+    def toggle_inventory_panel(self):
+        """Open or close the inventory overlay panel."""
+        if self._inv_panel_visible:
+            self._close_inventory_panel()
+        else:
+            self._open_inventory_panel()
+
+    def _open_inventory_panel(self):
+        """Build and display the inventory overlay."""
+        self._close_inventory_panel()   # ensure clean state
+
+        self._inv_panel_visible = True
+        elements = []
+
+        # Dark semi‑transparent backdrop
+        bg = Entity(parent=camera.ui, model='quad', scale=(0.55, 0.55),
+                     position=(0, 0.05),
+                     color=color.rgba(*INVENTORY_PANEL_BG, 220), z=0.3)
+        elements.append(bg)
+
+        # Title
+        title = Text(text='[ INVENTORY ]', parent=camera.ui,
+                      position=(0, 0.28), origin=(0, 0),
+                      scale=1.5, color=color.rgb(*NEON_CYAN), font='VeraMono.ttf')
+        elements.append(title)
+
+        # Separator
+        sep = Text(text='─' * 24, parent=camera.ui,
+                    position=(0, 0.24), origin=(0, 0),
+                    scale=0.8, color=color.rgb(0, 200, 200), font='VeraMono.ttf')
+        elements.append(sep)
+
+        # Item list
+        if self.inventory:
+            items = self.inventory.get_items()
+            if not items:
+                empty = Text(text='[ EMPTY ]', parent=camera.ui,
+                              position=(0, 0.15), origin=(0, 0),
+                              scale=1.0, color=color.rgb(100, 100, 140),
+                              font='VeraMono.ttf')
+                elements.append(empty)
+            else:
+                eq_q = None  # currently equipped in Q slot
+                eq_r = None  # currently equipped in R slot
+                if self.equipment_manager:
+                    eq_q = self.equipment_manager.slots.get('q')
+                    eq_r = self.equipment_manager.slots.get('r')
+
+                for idx, (item, count) in enumerate(items):
+                    y_pos = 0.18 - idx * 0.05
+
+                    # Check if this item is equipped
+                    equip_tag = ''
+                    if item.item_type == eq_q:
+                        equip_tag = ' [Q]'
+                    elif item.item_type == eq_r:
+                        equip_tag = ' [R]'
+
+                    # Item line: icon + name x count + equip tag
+                    line_text = f'{item.icon_char} {item.name} x{count}{equip_tag}'
+                    clr = NEON_GREEN if equip_tag else NEON_CYAN
+
+                    t = Text(text=line_text, parent=camera.ui,
+                              position=(-0.18, y_pos), origin=(0, 0),
+                              scale=0.9, color=color.rgb(*clr), font='VeraMono.ttf')
+                    elements.append(t)
+
+        # Capacity footer
+        if self.inventory:
+            used  = len(self.inventory.slots)
+            total = self.inventory.max_slots
+            cap = Text(text=f'Slots: {used}/{total}', parent=camera.ui,
+                        position=(0, -0.18), origin=(0, 0),
+                        scale=0.8, color=color.rgb(*HUD_SECONDARY), font='VeraMono.ttf')
+            elements.append(cap)
+
+        # Hint
+        hint = Text(text='[TAB] Close  |  [1-8] Equip Q  |  [SHIFT+1-8] Equip R',
+                     parent=camera.ui, position=(0, -0.22), origin=(0, 0),
+                     scale=0.7, color=color.rgb(80, 80, 100), font='VeraMono.ttf')
+        elements.append(hint)
+
+        self._inv_elements = elements
+
+    def _close_inventory_panel(self):
+        """Remove the inventory overlay."""
+        for e in self._inv_elements:
+            try:
+                ursina_destroy(e)
+            except Exception:
+                pass
+        self._inv_elements.clear()
+        self._inv_panel_visible = False
+
+    @property
+    def inventory_open(self):
+        """Whether the inventory panel is currently visible."""
+        return self._inv_panel_visible
+
+    # ------------------------------------------------------------------ #
     def update(self):
         """Refresh dynamic HUD values each frame."""
+        # ── Item message timer (Phase 6) ─────────────────────────────── #
+        if self._item_msg_timer > 0:
+            self._item_msg_timer -= 0.016   # approximate dt
+            if self._item_msg_timer <= 0:
+                self.item_msg.visible = False
+
         # Sprint
         if self.player_ref and hasattr(self.player_ref, 'is_sprinting'):
             self.sprint_text.text = '>> SPRINT <<' if self.player_ref.is_sprinting else ''
@@ -172,8 +329,43 @@ class HUD(Entity):
             else:
                 self.mission_msg.visible = False
 
+        # ── Equipment slots (Phase 6) ────────────────────────────────── #
+        if self.equipment_manager:
+            q_info = self.equipment_manager.get_slot_info('q')
+            r_info = self.equipment_manager.get_slot_info('r')
+
+            # Q slot display
+            if q_info['item_type']:
+                q_name = q_info['item_type'].replace('_', ' ').title()
+                if q_info['ready']:
+                    self.equip_q_text.text  = f'[Q] {q_name}'
+                    self.equip_q_text.color = color.rgb(*NEON_CYAN)
+                else:
+                    cd = q_info['cooldown']
+                    self.equip_q_text.text  = f'[Q] {q_name} ({cd:.1f}s)'
+                    self.equip_q_text.color = color.rgb(*NEON_YELLOW)
+            else:
+                self.equip_q_text.text  = '[Q] ---'
+                self.equip_q_text.color = color.rgb(80, 80, 100)
+
+            # R slot display
+            if r_info['item_type']:
+                r_name = r_info['item_type'].replace('_', ' ').title()
+                if r_info['ready']:
+                    self.equip_r_text.text  = f'[R] {r_name}'
+                    self.equip_r_text.color = color.rgb(*NEON_CYAN)
+                else:
+                    cd = r_info['cooldown']
+                    self.equip_r_text.text  = f'[R] {r_name} ({cd:.1f}s)'
+                    self.equip_r_text.color = color.rgb(*NEON_YELLOW)
+            else:
+                self.equip_r_text.text  = '[R] ---'
+                self.equip_r_text.color = color.rgb(80, 80, 100)
+
     # ------------------------------------------------------------------ #
     def destroy(self):
+        """Remove all HUD elements."""
+        self._close_inventory_panel()   # Phase 6 — cleanup inv panel
         try:
             ursina_destroy(self.sprint_text)
         except Exception:
@@ -186,13 +378,19 @@ class HUD(Entity):
             ursina_destroy(self.mission_msg)
         except Exception:
             pass
+        try:
+            ursina_destroy(self.item_msg)
+        except Exception:
+            pass
         for e in self.elements:
             try:
                 ursina_destroy(e)
             except Exception:
                 pass
         self.elements.clear()
-        self.player_ref      = None
-        self.game_state      = None
-        self.mission_manager = None
+        self.player_ref        = None
+        self.game_state        = None
+        self.mission_manager   = None
+        self.inventory         = None
+        self.equipment_manager = None
         super().destroy()

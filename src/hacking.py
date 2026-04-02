@@ -56,6 +56,8 @@ from src.config import (
     NEON_MAGENTA,
     NEON_YELLOW,
     NEON_PURPLE,
+    SFX_KEY_PRESS,
+    SFX_HACK_FAIL,
 )
 
 
@@ -70,6 +72,7 @@ class HackingPanel(Entity):
         terminal_label  : str      — name of the terminal being hacked
         security_level  : int      — difficulty (1–3)
         on_complete     : callable — called with (bool) True=success False=fail
+        time_bonus      : float    — extra seconds added by Hack Booster (Phase 6)
 
     Usage:
         panel = HackingPanel("Access Node Alpha", 1, my_callback)
@@ -77,7 +80,8 @@ class HackingPanel(Entity):
         # my_callback(True) or my_callback(False) is called automatically
     """
 
-    def __init__(self, terminal_label, security_level, on_complete):
+    def __init__(self, terminal_label, security_level, on_complete,
+                 time_bonus=0.0, audio_manager=None):
         """Build the hacking panel UI and generate the key sequence."""
         # Initialise the Entity
         super().__init__()
@@ -86,6 +90,8 @@ class HackingPanel(Entity):
         self.terminal_label = terminal_label          # e.g. "Access Node Alpha"
         self.security_level = security_level          # 1, 2, or 3
         self.on_complete    = on_complete             # callback(bool)
+        self.time_bonus     = time_bonus              # Phase 6 — extra seconds
+        self._audio         = audio_manager           # Phase 7 — audio manager
 
         # ── Generate the key sequence ────────────────────────────────── #
         # Length = base + (security_level - 1)  →  4, 5, or 6
@@ -95,8 +101,8 @@ class HackingPanel(Entity):
         # How many keys the player has correctly pressed so far
         self.progress = 0
 
-        # Timer tracking (counts down from HACK_TIME_LIMIT)
-        self.time_remaining = HACK_TIME_LIMIT
+        # Timer tracking (counts down from HACK_TIME_LIMIT + bonus)
+        self.time_remaining = HACK_TIME_LIMIT + time_bonus
 
         # Whether the panel is still active (False after success/fail/abort)
         self.active = True
@@ -258,7 +264,8 @@ class HackingPanel(Entity):
             self.time_remaining = 0
 
         # Update timer bar width (proportional to remaining time)
-        fraction = self.time_remaining / HACK_TIME_LIMIT
+        total_time = HACK_TIME_LIMIT + self.time_bonus  # include Phase 6 bonus
+        fraction = self.time_remaining / total_time
         self.timer_bar.scale_x = 0.5 * fraction  # shrinks toward zero
 
         # Change bar colour as time runs low
@@ -305,6 +312,9 @@ class HackingPanel(Entity):
             # Highlight the correctly pressed key in bright green
             self.key_texts[self.progress].color = color.rgb(*NEON_GREEN)
             self.progress += 1
+            # Phase 7 — play correct key sound
+            if self._audio:
+                self._audio.play_sfx(SFX_KEY_PRESS)
 
             # Update status
             self.status_text.text = f'>> {self.progress}/{len(self.sequence)} <<'
@@ -327,6 +337,9 @@ class HackingPanel(Entity):
             # Flash warning
             self.status_text.text = f'WRONG KEY! {self.progress}/{len(self.sequence)}'
             self.status_text.color = color.rgb(*NEON_MAGENTA)
+            # Phase 7 — play wrong key sound
+            if self._audio:
+                self._audio.play_sfx(SFX_HACK_FAIL)
 
     # ================================================================== #
     #  FINISH — success or failure

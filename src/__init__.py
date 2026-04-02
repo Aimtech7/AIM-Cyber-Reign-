@@ -14,4 +14,4 @@ Why this file exists:
 # ── Package‑level metadata ────────────────────────────────────────────── #
 __project__ = "AIM: Cyber Reign"   # human‑readable project name
 __author__  = "Aimtech"            # project author / studio name
-__version__ = "0.1.0"             # current semantic version
+__version__ = "0.7.0"             # current semantic version

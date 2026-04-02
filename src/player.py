@@ -1,5 +1,5 @@
 """
-player.py — Player Controller Module (Phase 2)
+player.py — Player Controller Module (Phase 7)
 =================================================
 Project : AIM: Cyber Reign
 Author  : Aimtech
@@ -22,6 +22,9 @@ Key concepts:
     • The base speed comes from config.py (PLAYER_SPEED).
 """
 
+# ── Standard library ───────────────────────────────────────────────────── #
+import random   # random footstep variant selection (Phase 7)
+
 # ── Ursina engine ──────────────────────────────────────────────────────── #
 from ursina import (
     Entity,
@@ -38,6 +41,10 @@ from src.config import (
     PLAYER_JUMP_HEIGHT,
     PLAYER_MOUSE_SENSITIVITY,
     PLAYER_START_POS,
+    # Phase 7 — footstep and movement SFX
+    SFX_FOOTSTEP_1, SFX_FOOTSTEP_2,
+    SFX_JUMP, SFX_LAND,
+    FOOTSTEP_WALK_INTERVAL, FOOTSTEP_SPRINT_INTERVAL,
 )
 
 
@@ -46,31 +53,40 @@ from src.config import (
 # ══════════════════════════════════════════════════════════════════════════ #
 class PlayerController(Entity):
     """
-    First‑person player with walk, sprint, look, and jump.
+    First‑person player with walk, sprint, look, jump, and audio.
 
     Inherits from Entity so its ``update()`` runs every frame,
     allowing continuous input checks (e.g. held sprint key).
 
     Attributes:
-        controller : FirstPersonController
-            The underlying Ursina prefab that handles physics.
+        controller   : FirstPersonController
         is_sprinting : bool
-            Whether the player is currently sprinting.
+        _audio       : AudioManager or None (Phase 7)
 
     Usage:
         player = PlayerController()   # spawns at PLAYER_START_POS
         player.destroy()              # removes from scene
     """
 
-    def __init__(self):
+    def __init__(self, audio_manager=None):
         """
         Instantiate the FPS controller and set game defaults.
+
+        Args:
+            audio_manager : AudioManager (Phase 7) — optional
         """
         # Initialise the Entity base (invisible, no model)
         super().__init__()
 
         # Track sprint state for the HUD or other systems
         self.is_sprinting = False
+
+        # Phase 7 — audio manager reference
+        self._audio = audio_manager
+
+        # Phase 7 — footstep timer and jump/land tracking
+        self._footstep_timer = 0.0
+        self._was_grounded   = True   # for landing detection
 
         # Create the Ursina first‑person controller
         self.controller = FirstPersonController(
@@ -88,11 +104,13 @@ class PlayerController(Entity):
     # ------------------------------------------------------------------ #
     def update(self):
         """
-        Called every frame by Ursina.  Checks if the player is holding
-        Left Shift and adjusts movement speed for sprinting.
+        Called every frame by Ursina.  Handles sprinting, footsteps,
+        jump detection, and landing detection.
         """
         if self.controller is None:
             return  # guard against post‑destroy calls
+
+        dt = getattr(__import__('ursina', fromlist=['time']), 'time').dt
 
         # Check if Left Shift is held down
         if held_keys['left shift']:
@@ -103,6 +121,38 @@ class PlayerController(Entity):
             # Normal walk speed
             self.controller.speed = PLAYER_SPEED
             self.is_sprinting = False
+
+        # ── Phase 7: Footstep audio ────────────────────────────────── #
+        if self._audio and self.controller.grounded:
+            # Check if player is actually moving
+            moving = (
+                held_keys['w'] or held_keys['a']
+                or held_keys['s'] or held_keys['d']
+            )
+            if moving:
+                # Choose interval based on sprint state
+                interval = (FOOTSTEP_SPRINT_INTERVAL
+                            if self.is_sprinting
+                            else FOOTSTEP_WALK_INTERVAL)
+                self._footstep_timer += dt
+                if self._footstep_timer >= interval:
+                    self._footstep_timer = 0.0
+                    # Alternate footstep variants
+                    sfx = random.choice([SFX_FOOTSTEP_1, SFX_FOOTSTEP_2])
+                    self._audio.play_sfx(sfx)
+            else:
+                self._footstep_timer = 0.0   # reset when standing still
+
+        # ── Phase 7: Jump / land detection ─────────────────────────── #
+        if self._audio:
+            grounded_now = self.controller.grounded
+            if self._was_grounded and not grounded_now:
+                # Just left the ground → jump
+                self._audio.play_sfx(SFX_JUMP)
+            elif not self._was_grounded and grounded_now:
+                # Just landed → land
+                self._audio.play_sfx(SFX_LAND)
+            self._was_grounded = grounded_now
 
     # ------------------------------------------------------------------ #
     #  Cleanup

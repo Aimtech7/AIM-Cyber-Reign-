@@ -383,12 +383,116 @@ MISSION_REQUIRED_TERMINALS = ['Access Node Alpha', 'Data Terminal Gamma']
 
 
 # ──────────────────────────────────────────────────────────────────────── #
+#  Inventory & Equipment Settings  (Phase 6)
+# ──────────────────────────────────────────────────────────────────────── #
+
+# Maximum number of items the player can carry
+INVENTORY_MAX_SLOTS = 8
+
+# Distance at which items are automatically picked up (world units)
+ITEM_PICKUP_DISTANCE = 3.0
+
+# Cooldown between using equipped items (seconds)
+EQUIPMENT_USE_COOLDOWN = 2.0
+
+# Keybinds for the two equipment slots
+EQUIP_SLOT_Q = 'q'   # first equipment slot
+EQUIP_SLOT_R = 'r'   # second equipment slot (only outside hacking)
+
+# Key to toggle the inventory panel overlay
+INVENTORY_TOGGLE_KEY = 'tab'
+
+# ── Item Statistics ────────────────────────────────────────────────────── #
+
+# Energy Cell — restores this many HP when used
+ITEM_ENERGY_CELL_HEAL = 30
+
+# Hack Booster — adds this many seconds to hacking timer
+ITEM_HACK_BOOSTER_TIME = 5.0
+
+# EMP Pulse — disables drones within this radius (world units)
+ITEM_EMP_RADIUS = 15.0
+
+# EMP Pulse — duration of the disable effect (seconds)
+ITEM_EMP_DURATION = 5.0
+
+# ── Item Pickup Spawn Points ──────────────────────────────────────────── #
+# Each tuple is (x, z, item_type)
+# item_type: 'energy_cell', 'hack_booster', 'emp_pulse'
+
+ITEM_PICKUP_SPECS = [
+    ( 10,   5,  'energy_cell'),      # near Alpha terminal
+    (-10,  -5,  'energy_cell'),      # near Beta terminal
+    (  0,  -20, 'hack_booster'),     # near Gamma terminal
+    ( 18,   0,  'hack_booster'),     # near Delta terminal
+    (-15,  15,  'emp_pulse'),        # mid‑map west
+    ( 20, -15,  'emp_pulse'),        # far east corner
+]
+
+# Glow colour for item pickups in the world (bright orange)
+ITEM_PICKUP_COLOR = (255, 160, 0)
+
+# Inventory panel background colour (dark overlay)
+INVENTORY_PANEL_BG = (8, 5, 20)
+
+# ──────────────────────────────────────────────────────────────────────── #
+#  Audio Settings  (Phase 7)
+# ──────────────────────────────────────────────────────────────────────── #
+
+# Base directory for all audio files (relative to project root)
+AUDIO_DIR = 'assets/audio'
+
+# Volume channels (0.0 = silent, 1.0 = max)
+AUDIO_MASTER_VOLUME = 0.7
+AUDIO_MUSIC_VOLUME  = 0.4
+AUDIO_SFX_VOLUME    = 0.6
+
+# ── Music tracks ───────────────────────────────────────────────────────── #
+MUSIC_MENU_LOOP     = 'menu_loop'       # main menu background
+MUSIC_CYBER_AMBIENT = 'cyber_ambient'   # in‑game ambient
+MUSIC_TENSE_LOOP    = 'tense_loop'      # hacking / high‑security
+
+# ── UI sound effects ──────────────────────────────────────────────────── #
+SFX_CLICK            = 'click'           # menu button click
+SFX_SLIDER           = 'slider'          # settings slider move
+SFX_INVENTORY_TOGGLE = 'inventory_toggle'  # TAB open/close
+SFX_PICKUP           = 'pickup'          # item picked up
+
+# ── Hacking sound effects ─────────────────────────────────────────────── #
+SFX_TERMINAL_ON  = 'terminal_on'   # terminal interaction starts
+SFX_KEY_PRESS    = 'key_press'     # correct key in sequence
+SFX_HACK_SUCCESS = 'hack_success'  # breach complete
+SFX_HACK_FAIL    = 'hack_fail'     # wrong key or timeout
+
+# ── Drone sound effects ───────────────────────────────────────────────── #
+SFX_DRONE_ALERT    = 'drone_alert'     # IDLE → SUSPICIOUS
+SFX_DRONE_CHASE    = 'drone_chase'     # SUSPICIOUS → ALERT
+SFX_DRONE_HIT      = 'drone_hit'       # drone damages player
+SFX_DRONE_DISABLED = 'drone_disabled'  # EMP hit
+
+# ── Player sound effects ──────────────────────────────────────────────── #
+SFX_FOOTSTEP_1 = 'footstep1'   # walk step variant 1
+SFX_FOOTSTEP_2 = 'footstep2'   # walk step variant 2
+SFX_JUMP       = 'jump'        # player jumps
+SFX_LAND       = 'land'        # player lands
+
+# ── Mission sound effects ─────────────────────────────────────────────── #
+SFX_EXTRACT         = 'extract'          # extraction zone reached
+SFX_MISSION_COMPLETE = 'mission_complete'  # mission success
+SFX_MISSION_FAIL    = 'mission_fail'     # mission failure
+
+# ── Footstep timing ───────────────────────────────────────────────────── #
+FOOTSTEP_WALK_INTERVAL   = 0.5   # seconds between walk footsteps
+FOOTSTEP_SPRINT_INTERVAL = 0.3   # seconds between sprint footsteps
+
+
+# ──────────────────────────────────────────────────────────────────────── #
 #  Metadata
 # ──────────────────────────────────────────────────────────────────────── #
 
 # Project metadata used by documentation generators and splash screens
 PROJECT_NAME    = "AIM: Cyber Reign"
 PROJECT_AUTHOR  = "Aimtech"
-PROJECT_VERSION = "0.5.0"
-PROJECT_PHASE   = "Phase 5 — Mission & Objective System"
+PROJECT_VERSION = "0.7.0"
+PROJECT_PHASE   = "Phase 7 — Audio System"
 
