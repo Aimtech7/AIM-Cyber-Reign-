@@ -10,6 +10,14 @@ Purpose : Stores all global constants, colour palettes, window settings,
 Why this file exists:
     Centralising configuration avoids "magic numbers" scattered across
     the codebase and makes the game easy to tune or theme‑swap later.
+
+Phase 8 changes:
+    • Added visual effects constants (glow pulse, particles)
+    • Added camera polish constants (head bob, camera shake)
+    • Added save/load configuration
+    • Rebalanced gameplay values (drones, hacking, health, alerts)
+    • Updated audio volume levels and added new SFX constants
+    • Bumped version to 0.8.0
 """
 
 # ──────────────────────────────────────────────────────────────────────── #
@@ -261,7 +269,7 @@ HACK_KEY_POOL = ['w', 'a', 's', 'd', 'q', 'r', 'f']
 HACK_BASE_LENGTH = 4
 
 # How many seconds the player has to complete the entire sequence
-HACK_TIME_LIMIT = 12.0
+HACK_TIME_LIMIT = 14.0       # Phase 8 — increased from 12.0 for more breathing room
 
 # Penalty: how many correct keys are lost on a wrong key press
 HACK_WRONG_PENALTY = 1
@@ -292,14 +300,14 @@ DRONE_SPECS = [
 DRONE_PATROL_RADIUS = 8
 
 # Detection radius — player within this range triggers suspicion / alert
-DRONE_DETECT_RADIUS = 12
+DRONE_DETECT_RADIUS = 10     # Phase 8 — reduced from 12 for fairer gameplay
 
 # Close-attack radius — player within this range takes damage
 DRONE_DAMAGE_RADIUS = 3.5
 
 # Movement speeds (world units per second)
 DRONE_PATROL_SPEED = 2.0     # idle wander speed
-DRONE_CHASE_SPEED  = 4.5     # pursuit speed
+DRONE_CHASE_SPEED  = 4.0     # Phase 8 — reduced from 4.5 for fairer gameplay
 
 # Hover bob — vertical oscillation while patrolling
 DRONE_BOB_SPEED  = 2.0       # oscillations per second
@@ -312,7 +320,7 @@ DRONE_ALERT_TIMEOUT = 6.0
 DRONE_TURN_SPEED = 180
 
 # Damage the drone inflicts per second when within damage radius
-DRONE_DAMAGE_PER_SEC = 8
+DRONE_DAMAGE_PER_SEC = 6     # Phase 8 — reduced from 8 for fairer gameplay
 
 # Drone colours per state
 DRONE_COLOR_IDLE       = NEON_CYAN
@@ -330,7 +338,7 @@ ALERT_LEVEL_SUSPICIOUS = 1
 ALERT_LEVEL_ALERT      = 2
 
 # How many seconds before the global alert decays by one level
-ALERT_DECAY_TIME = 20.0
+ALERT_DECAY_TIME = 15.0      # Phase 8 — reduced from 20.0 for faster cooldown
 
 # Alert increase when a hack fails (added to alert accumulator)
 ALERT_ON_HACK_FAIL = 1.0
@@ -357,10 +365,10 @@ ALERT_COLORS = {
 PLAYER_MAX_HEALTH = 100
 
 # Health regeneration rate when not taking damage (HP per second)
-PLAYER_HEALTH_REGEN = 2.0
+PLAYER_HEALTH_REGEN = 3.0    # Phase 8 — increased from 2.0 for faster recovery
 
 # Seconds after last damage before regen starts
-PLAYER_REGEN_DELAY = 4.0
+PLAYER_REGEN_DELAY = 3.0     # Phase 8 — reduced from 4.0 for shorter wait
 
 
 # ──────────────────────────────────────────────────────────────────────── #
@@ -405,7 +413,7 @@ INVENTORY_TOGGLE_KEY = 'tab'
 # ── Item Statistics ────────────────────────────────────────────────────── #
 
 # Energy Cell — restores this many HP when used
-ITEM_ENERGY_CELL_HEAL = 30
+ITEM_ENERGY_CELL_HEAL = 40   # Phase 8 — increased from 30 for more impactful healing
 
 # Hack Booster — adds this many seconds to hacking timer
 ITEM_HACK_BOOSTER_TIME = 5.0
@@ -443,9 +451,9 @@ INVENTORY_PANEL_BG = (8, 5, 20)
 AUDIO_DIR = 'assets/audio'
 
 # Volume channels (0.0 = silent, 1.0 = max)
-AUDIO_MASTER_VOLUME = 0.7
-AUDIO_MUSIC_VOLUME  = 0.4
-AUDIO_SFX_VOLUME    = 0.6
+AUDIO_MASTER_VOLUME = 0.8    # Phase 8 — raised from 0.7 for stronger presence
+AUDIO_MUSIC_VOLUME  = 0.35   # Phase 8 — lowered from 0.4 to not overpower SFX
+AUDIO_SFX_VOLUME    = 0.65   # Phase 8 — raised from 0.6 for clearer feedback
 
 # ── Music tracks ───────────────────────────────────────────────────────── #
 MUSIC_MENU_LOOP     = 'menu_loop'       # main menu background
@@ -487,12 +495,88 @@ FOOTSTEP_SPRINT_INTERVAL = 0.3   # seconds between sprint footsteps
 
 
 # ──────────────────────────────────────────────────────────────────────── #
+#  Phase 8 — Visual Effects Settings
+# ──────────────────────────────────────────────────────────────────────── #
+
+# GlowPulse effect — pulsing neon ring on terminals, extraction zone, etc.
+GLOW_PULSE_SPEED     = 2.5     # slightly faster pulsing
+GLOW_PULSE_MIN_SCALE = 0.90    # minimum scale factor during pulse
+GLOW_PULSE_MAX_SCALE = 1.30    # much larger maximum scale factor
+GLOW_PULSE_MIN_ALPHA = 50      # minimum alpha (0–255) during pulse
+GLOW_PULSE_MAX_ALPHA = 240     # much brighter maximum alpha
+
+# ParticleEmitter budgets — pumped up for better visual impact
+PARTICLE_HACK_COUNT    = 15    # floating data glyphs during hacking
+PARTICLE_EMP_COUNT     = 40    # massive expanding ring fragments on EMP
+PARTICLE_ALERT_COUNT   = 15    # red sparks when drone goes ALERT
+PARTICLE_EXTRACT_COUNT = 30    # upward teal sparkles at extraction zone
+PARTICLE_LIFETIME      = 2.0   # seconds before a particle is recycled
+
+
+# ──────────────────────────────────────────────────────────────────────── #
+#  Phase 8 — Camera Polish Settings
+# ──────────────────────────────────────────────────────────────────────── #
+
+# Head bob — subtle vertical oscillation while walking
+HEAD_BOB_SPEED            = 9.0    # oscillation frequency
+HEAD_BOB_AMOUNT           = 0.08   # heavier vertical amplitude
+HEAD_BOB_SPRINT_MULTIPLIER = 1.6   # intense sprint bobbing
+
+# Camera shake — triggered on damage, EMP, etc.
+CAMERA_SHAKE_DAMAGE_INTENSITY  = 0.3    # harsh shake strength on player hit
+CAMERA_SHAKE_DAMAGE_DURATION   = 0.4    # shake duration (seconds)
+CAMERA_SHAKE_EMP_INTENSITY     = 0.6    # massive shake for EMP blast
+CAMERA_SHAKE_EMP_DURATION      = 0.7    # EMP shake duration
+CAMERA_SHAKE_HACK_FAIL_INTENSITY = 0.15 # mild shake on wrong hack key
+CAMERA_SHAKE_HACK_FAIL_DURATION  = 0.2  # wrong key shake duration
+
+# Camera smoothing — lerp factor for mouselook (0=no smoothing, 1=instant)
+CAMERA_SMOOTH_FACTOR = 0.85
+
+
+# ──────────────────────────────────────────────────────────────────────── #
+#  Phase 8 — Save / Load Settings
+# ──────────────────────────────────────────────────────────────────────── #
+
+# Save file path (relative to project root, Docker-compatible)
+SAVE_DIR       = 'saves'
+SAVE_FILE_NAME = 'savegame.json'
+
+
+# ──────────────────────────────────────────────────────────────────────── #
+#  Phase 8 — Additional SFX
+# ──────────────────────────────────────────────────────────────────────── #
+
+SFX_DAMAGE_HIT   = 'damage_hit'     # player takes damage
+SFX_SAVE_GAME    = 'save_game'      # save confirmation beep
+SFX_LOAD_GAME    = 'load_game'      # load confirmation beep
+
+
+# ──────────────────────────────────────────────────────────────────────── #
+#  Phase 8 — UI Animation Settings
+# ──────────────────────────────────────────────────────────────────────── #
+
+# Health bar lerp speed (how fast the bar catches up to real value)
+HEALTH_BAR_LERP_SPEED  = 4.0    # units per second
+
+# Damage vignette — red edge overlay on taking damage
+VIGNETTE_FADE_SPEED    = 1.5    # slower fade so the pain lingers more
+VIGNETTE_MAX_ALPHA     = 0.8    # much darker and aggressive on hit
+
+# Alert flash — brief border flash when alert level changes
+ALERT_FLASH_DURATION   = 0.3    # seconds the flash is visible
+
+# Message slide-in speed (UI units per second)
+MESSAGE_SLIDE_SPEED    = 2.0
+
+
+# ──────────────────────────────────────────────────────────────────────── #
 #  Metadata
 # ──────────────────────────────────────────────────────────────────────── #
 
 # Project metadata used by documentation generators and splash screens
 PROJECT_NAME    = "AIM: Cyber Reign"
 PROJECT_AUTHOR  = "Aimtech"
-PROJECT_VERSION = "0.7.0"
-PROJECT_PHASE   = "Phase 7 — Audio System"
+PROJECT_VERSION = "0.8.0"
+PROJECT_PHASE   = "Phase 8 — Polish & Final Touches"
 

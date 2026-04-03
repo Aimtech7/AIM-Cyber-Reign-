@@ -1,16 +1,21 @@
 """
-ui.py — Heads‑Up Display (HUD) Module (Phase 6)
+ui.py — Heads‑Up Display (HUD) Module (Phase 8)
 ==================================================
 Project : AIM: Cyber Reign
 Author  : Aimtech
-Purpose : In‑game overlay.  Phase 6 adds:
-            • Inventory panel (toggle with TAB)
-            • Equipment slot display (Q / R)
-            • Item pickup feedback messages
+Purpose : In‑game overlay.  Phase 8 adds:
+            • Smooth health bar transitions (lerp)
+            • Damage vignette overlay (red edge flash on hit)
+            • Alert flash effect (border flash on alert change)
+            • Color‑coded health gradient
+            • Item feedback messages (Phase 6)
 """
 
 # ── Ursina engine ──────────────────────────────────────────────────────── #
-from ursina import Entity, Text, color, destroy as ursina_destroy, camera
+from ursina import (
+    Entity, Text, color, destroy as ursina_destroy, camera,
+    time as ursina_time,   # Phase 8 — accurate dt for animations
+)
 
 # ── Project imports ────────────────────────────────────────────────────── #
 from src.config import (
@@ -19,6 +24,10 @@ from src.config import (
     HUD_DEFAULT_ZONE, PLAYER_MAX_HEALTH,
     ALERT_LABELS, ALERT_COLORS,
     INVENTORY_PANEL_BG,          # Phase 6 — panel background colour
+    # Phase 8 — animation constants
+    HEALTH_BAR_LERP_SPEED,
+    VIGNETTE_FADE_SPEED, VIGNETTE_MAX_ALPHA,
+    ALERT_FLASH_DURATION,
 )
 
 
@@ -60,6 +69,13 @@ class HUD(Entity):
         self._inv_panel_visible = False
         self._inv_elements      = []   # UI elements for the inventory overlay
         self._item_msg_timer    = 0.0  # item feedback message timer
+
+        # Phase 8 — animation state
+        self._health_bar_display = 1.0   # displayed health fraction (lerps toward real)
+        self._vignette_alpha     = 0.0   # current vignette opacity (0–1)
+        self._alert_flash_timer  = 0.0   # countdown for alert border flash
+        self._last_alert_level   = 0     # track alert changes for flash trigger
+        self._last_health        = PLAYER_MAX_HEALTH  # track damage for vignette trigger
 
         left_x  = -0.85
         right_x =  0.55
@@ -125,11 +141,38 @@ class HUD(Entity):
         self.equip_q_text = self._t('[Q] ---', right_x, 0.07, 0.85, NEON_CYAN)
         self.equip_r_text = self._t('[R] ---', right_x, 0.03, 0.85, NEON_CYAN)
 
-        # ── CENTRE: Item feedback message (Phase 6) ──────────────────── #
+        # ── CENTRE: Item feedback message (Phase 6) ────────────────────── #
         self.item_msg = Text(text='', position=(0, -0.25), origin=(0, 0),
                              scale=1.3, color=color.rgb(*NEON_GREEN),
                              font='VeraMono.ttf', visible=False)
         self.elements.append(self.item_msg)
+
+        # ── BOTTOM-CENTRE: Controls hint (always visible) ───────────── #
+        hint = Text(text='[ESC] Menu  |  [TAB] Inventory  |  [E] Interact',
+                    position=(0, -0.47), origin=(0, 0),
+                    scale=0.7, color=color.rgb(60, 60, 90),
+                    font='VeraMono.ttf')
+        self.elements.append(hint)
+
+        # ── Phase 8: Damage vignette (red edge overlay) ──────────────── #
+        self.vignette = Entity(
+            parent=camera.ui,
+            model='quad',
+            scale=(2, 1),
+            color=color.rgba(200, 10, 10, 0),   # starts fully transparent
+            z=-0.1,   # in front of other UI
+        )
+        self.elements.append(self.vignette)
+
+        # ── Phase 8: Alert flash border ──────────────────────────────── #
+        self.alert_flash = Entity(
+            parent=camera.ui,
+            model='quad',
+            scale=(2, 1),
+            color=color.rgba(255, 50, 0, 0),   # starts fully transparent
+            z=-0.09,
+        )
+        self.elements.append(self.alert_flash)
 
     # ------------------------------------------------------------------ #
     def _t(self, text, x, y, scale, clr):
@@ -258,9 +301,11 @@ class HUD(Entity):
     # ------------------------------------------------------------------ #
     def update(self):
         """Refresh dynamic HUD values each frame."""
+        dt = ursina_time.dt   # Phase 8 — accurate delta time
+
         # ── Item message timer (Phase 6) ─────────────────────────────── #
         if self._item_msg_timer > 0:
-            self._item_msg_timer -= 0.016   # approximate dt
+            self._item_msg_timer -= dt
             if self._item_msg_timer <= 0:
                 self.item_msg.visible = False
 
@@ -279,19 +324,32 @@ class HUD(Entity):
                                      else color.rgb(*NEON_GREEN))
             self.access_text.text = f'LEVEL {stats["access_level"]}'
 
-            # Health
-            hp = stats['health']
+            # Health — Phase 8: smooth lerp transition
+            hp   = stats['health']
             frac = hp / PLAYER_MAX_HEALTH
+
+            # Lerp the displayed bar toward the real fraction
+            diff = frac - self._health_bar_display
+            self._health_bar_display += diff * min(1.0, HEALTH_BAR_LERP_SPEED * dt)
+            self.health_bar.scale_x = 0.18 * max(0.0, self._health_bar_display)
+
             self.health_text.text = f'{int(hp)}'
-            self.health_bar.scale_x = 0.18 * frac
-            if frac > 0.5:
+
+            # Phase 8 — color-coded health gradient (green → yellow → red)
+            if frac > 0.6:
                 hc = NEON_GREEN
-            elif frac > 0.25:
+            elif frac > 0.3:
                 hc = NEON_YELLOW
             else:
                 hc = NEON_MAGENTA
             self.health_bar.color  = color.rgb(*hc)
             self.health_text.color = color.rgb(*hc)
+
+            # Phase 8 — damage vignette trigger
+            if hp < self._last_health:
+                # Player just took damage — flash the vignette
+                self._vignette_alpha = VIGNETTE_MAX_ALPHA
+            self._last_health = hp
 
             # Alert
             al = stats['alert_level']
@@ -305,6 +363,29 @@ class HUD(Entity):
                 self.warning_text.visible = True
             else:
                 self.warning_text.visible = False
+
+            # Phase 8 — alert flash trigger (when alert level increases)
+            if al > self._last_alert_level:
+                self._alert_flash_timer = ALERT_FLASH_DURATION
+            self._last_alert_level = al
+
+        # Phase 8 — animate vignette fade-out
+        if self._vignette_alpha > 0:
+            self._vignette_alpha -= VIGNETTE_FADE_SPEED * dt
+            self._vignette_alpha = max(0.0, self._vignette_alpha)
+            alpha_byte = int(self._vignette_alpha * 255)
+            self.vignette.color = color.rgba(200, 10, 10, alpha_byte)
+        else:
+            self.vignette.color = color.rgba(200, 10, 10, 0)
+
+        # Phase 8 — animate alert flash fade-out
+        if self._alert_flash_timer > 0:
+            self._alert_flash_timer -= dt
+            flash_t = max(0.0, self._alert_flash_timer / ALERT_FLASH_DURATION)
+            flash_alpha = int(flash_t * 100)   # max 100 for subtle effect
+            self.alert_flash.color = color.rgba(255, 50, 0, flash_alpha)
+        else:
+            self.alert_flash.color = color.rgba(255, 50, 0, 0)
 
         # ── Mission panel (Phase 5) ──────────────────────────────────── #
         if self.mission_manager:

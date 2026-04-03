@@ -1,5 +1,5 @@
 """
-environment.py — Game Environment Module (Phase 5)
+environment.py — Game Environment Module (Phase 8)
 ====================================================
 Project : AIM: Cyber Reign
 Author  : Aimtech
@@ -8,6 +8,8 @@ Purpose : Builds the 3D cyberpunk world including:
             • Hackable terminals with state colours
             • Extraction zone (Phase 5)
             • Mission‑target terminal highlighting (Phase 5)
+            • GlowPulse effects on terminals & extraction zone (Phase 8)
+            • Neon accent strips on buildings (Phase 8)
 """
 
 # ── Standard library ───────────────────────────────────────────────────── #
@@ -48,6 +50,7 @@ from src.config import (
 )
 from src.interaction import Interactable
 from src.inventory import ItemPickup   # Phase 6 — pickup entities
+from src.effects import GlowPulse      # Phase 8 — pulsing glow rings
 
 
 # ══════════════════════════════════════════════════════════════════════════ #
@@ -74,6 +77,7 @@ class GameEnvironment:
         self.terminal_parts     = {}
         self.extraction_ring    = None   # pulsing ring Entity
         self.item_pickups       = []     # Phase 6 — ItemPickup entities
+        self._glow_effects      = []     # Phase 8 — GlowPulse entities
 
         self._build_floor()
         self._build_buildings()
@@ -125,6 +129,15 @@ class GameEnvironment:
                 e = Entity(model='cube', position=(x+dx, h/2, z+dz),
                            scale=(0.08, h, 0.08), color=clr, unlit=True)
                 self.entities.append(e)
+
+            # Phase 8 — neon accent strip across the building face
+            accent_strip = Entity(
+                model='cube',
+                position=(x, h * 0.6, z),
+                scale=(w + 0.05, 0.05, d + 0.05),
+                color=clr, unlit=True,
+            )
+            self.entities.append(accent_strip)
 
     # ================================================================== #
     #  PILLARS
@@ -197,6 +210,17 @@ class GameEnvironment:
                 'base': base, 'screen': screen, 'accent': accent,
             }
 
+            # Phase 8 — add pulsing glow ring around the terminal base
+            glow_clr_tuple = (MISSION_TARGET_COLOR if is_target
+                              else TERMINAL_COLOR_LOCKED)
+            glow = GlowPulse(
+                parent_entity=base,
+                base_scale=(1.5, 0.08, 1.5),
+                glow_color=glow_clr_tuple,
+            )
+            self._glow_effects.append(glow)
+            self.entities.append(glow)
+
             if self._interaction is not None:
                 def make_cb(lbl, sec):
                     def cb():
@@ -258,6 +282,16 @@ class GameEnvironment:
                 unlit=True,
             )
             self.entities.append(marker)
+
+        # Phase 8 — pulsing glow ring around the extraction pad
+        extract_glow = GlowPulse(
+            parent_entity=pad,
+            base_scale=(1.1, 0.08, 1.1),
+            glow_color=EXTRACTION_ZONE_COLOR,
+            speed=1.5,   # slightly slower pulse for grandeur
+        )
+        self._glow_effects.append(extract_glow)
+        self.entities.append(extract_glow)
 
         # Register with interaction system
         if self._interaction is not None and self._extraction_cb is not None:
@@ -324,3 +358,4 @@ class GameEnvironment:
         self.terminal_parts.clear()
         self.extraction_ring = None
         self.item_pickups.clear()   # Phase 6 — clear pickup refs
+        self._glow_effects.clear()  # Phase 8 — clear glow refs

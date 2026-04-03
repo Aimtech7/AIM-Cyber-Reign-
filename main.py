@@ -45,6 +45,10 @@ app = Ursina(
 
 # ── Window cosmetics ──────────────────────────────────────────────────── #
 window.color = color.rgb(*BG_DARK)     # very dark clear colour
+try:
+    window.clearColor = (BG_DARK[0]/255, BG_DARK[1]/255, BG_DARK[2]/255, 1)
+except Exception:
+    pass  # fallback if clearColor isn't available in this Ursina version
 window.exit_button.visible = False     # hide Ursina's default exit button
 window.fps_counter.enabled = False     # hide FPS counter for clean UI
 

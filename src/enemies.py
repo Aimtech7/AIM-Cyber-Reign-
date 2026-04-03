@@ -1,28 +1,22 @@
 """
-enemies.py — Security Drone Module
-=====================================
+enemies.py — Security Drone Module (Phase 8)
+===============================================
 Project : AIM: Cyber Reign
 Author  : Aimtech
 Purpose : Implements the SecurityDrone — a floating patrol entity with
           three behaviour states: IDLE, SUSPICIOUS, and ALERT.
 
+Phase 8 changes:
+    • Distance-based LOD — drones beyond 50 units skip full update
+    • Frame-skip for IDLE drones — only update every other frame
+    • These optimizations reduce CPU cost with many drones
+
 Behaviour overview:
     IDLE        — hovers around its spawn point with a gentle bob.
     SUSPICIOUS  — player detected at medium range; drone slows and
-                  turns to look at the player.  If the player stays,
-                  escalates to ALERT.
+                  turns to look at the player.
     ALERT       — chases the player aggressively.  Deals damage when
-                  close enough.  Reverts to IDLE after losing sight.
-
-Visual design:
-    • Dark body cube with a glowing ring underneath (cyber drone look).
-    • Colour of the ring changes per state (cyan / yellow / magenta).
-    • Gentle vertical bob while idle.
-
-How it connects:
-    scenes.py creates drones at the positions in DRONE_SPECS.
-    Each drone receives a reference to the player and game_state
-    so it can check distance and deal damage.
+                  close enough.
 """
 
 # ── Standard library ───────────────────────────────────────────────────── #
@@ -51,6 +45,7 @@ from src.config import (
     DRONE_DAMAGE_PER_SEC,
     DRONE_BOB_SPEED,
     DRONE_BOB_AMOUNT,
+    DRONE_PATROL_RADIUS,
     DRONE_ALERT_TIMEOUT,
     ALERT_LEVEL_ALERT,
     # Phase 7 — drone SFX constants
@@ -136,6 +131,10 @@ class SecurityDrone(Entity):
         # ── Audio throttle (Phase 7) ─────────────────────────────── #
         self._hit_sfx_cooldown = 0.0       # prevents hit spam
 
+        # ── Phase 8: Performance optimization ─────────────────────── #
+        self._frame_counter = random.randint(0, 1)  # stagger frame-skips
+        self._lod_distance  = 50.0   # beyond this, skip full update
+
         # Pick an initial patrol target
         self._pick_patrol_target()
 
@@ -174,7 +173,14 @@ class SecurityDrone(Entity):
         """Per‑frame AI: detect player, switch states, move, damage."""
         dt = ursina_time.dt  # seconds since last frame
 
-        # ── EMP disable check (Phase 6) ───────────────────────────── #
+        # ── Phase 8: Frame-skip for IDLE drones (performance) ─────── #
+        self._frame_counter += 1
+        if (self.state == STATE_IDLE
+                and not self.emp_disabled
+                and self._frame_counter % 2 != 0):
+            return   # skip every other frame when idling
+
+        # ── EMP disable check (Phase 6) ─────────────────────────── #── #
         if self.emp_disabled:
             self._emp_timer -= dt
             if self._emp_timer <= 0:
@@ -192,6 +198,13 @@ class SecurityDrone(Entity):
 
         player_pos = self.player_ref.controller.position
         dist       = distance(self.position, player_pos)
+
+        # ── Phase 8: Distance LOD — skip full AI for far-away drones ── #
+        if dist > self._lod_distance and self.state == STATE_IDLE:
+            # Only do minimal bob animation, skip detection logic
+            self._bob_phase += DRONE_BOB_SPEED * dt
+            self.y = self._base_y + math.sin(self._bob_phase) * DRONE_BOB_AMOUNT
+            return
 
         # ── Global alert override: all drones go ALERT ───────────────── #
         if self.game_state.alert_level >= ALERT_LEVEL_ALERT:

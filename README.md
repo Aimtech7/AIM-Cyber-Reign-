@@ -2,24 +2,26 @@
 
 > Cyberpunk 3D game — Python + Ursina
 
-**Author:** Aimtech | **Version:** 0.7.0 | **Phase 7 — Audio System**
+**Author:** Aimtech | **Version:** 0.8.0 | **Phase 8 — Polish & Final Touches**
 
 ---
 
 ## 🎮 Features
 
-- First-person movement (WASD, sprint, jump) with footstep audio
-- Cyberpunk 3D world (buildings, pillars, walls, platforms, terminals)
+- First-person movement (WASD, sprint, jump) with head bob & camera shake
+- Cyberpunk 3D world with neon glow effects and accent lighting
 - Hacking mini-game with key-press and success/fail sounds
-- Security drones with 3-state AI, alert sounds, and EMP interactions
-- Player health with regen
+- Security drones with 3-state AI, distance-based LOD optimization
+- Player health with smooth animated health bar, damage vignette, color gradient
 - Mission system — "SECTOR BREACH": breach 2 targets + reach extraction
 - Win/lose conditions with mission complete/fail sounds
 - Inventory — 8 slots, stacking, item pickups with sound
 - Equipment — Q/R quick-use slots with cooldowns
-- Items — Energy Cell (heal), Hack Booster (+5s timer), EMP Pulse (disable drones)
-- **Audio system** — background music per zone, SFX for all interactions
-- **Volume control** — adjustable master volume in Settings
+- Items — Energy Cell (heal), Hack Booster (+5s timer), EMP Pulse (disable drones + particles)
+- Audio system — background music per zone, SFX for all interactions
+- Volume control — adjustable master volume in Settings
+- **Save/Load system** — auto-saves on breach/extraction, Continue from menu
+- **Visual polish** — glow pulses, particle effects, damage vignette, alert flash
 - Scene system, Docker support
 
 ## 🚀 Run
@@ -48,6 +50,6 @@ python main.py
 | Phase | Status |
 |---|---|
 | 1–7 | ✅ |
-| 8 Polish | 🔲 |
+| **8 — Polish & Final Touches** | ✅ |
 
 © Aimtech

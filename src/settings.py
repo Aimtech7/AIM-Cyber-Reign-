@@ -76,7 +76,7 @@ class SettingsMenu:
         bg = Entity(
             parent=camera.ui,
             model='quad',
-            scale=(2, 1),
+            scale=(3, 3),
             color=color.rgb(*SETTINGS_BG),
             z=1,
         )

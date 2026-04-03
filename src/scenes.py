@@ -1,5 +1,5 @@
 """
-scenes.py — Scene Manager Module (Phase 7)
+scenes.py — Scene Manager Module (Phase 8)
 =============================================
 Project : AIM: Cyber Reign
 Author  : Aimtech
@@ -10,6 +10,7 @@ Purpose : Central SceneManager handling:
             • Mission system & win/lose/restart (Phase 5)
             • Inventory, equipment, pickups, EMP (Phase 6)
             • Audio management — music + SFX (Phase 7)
+            • Save/load system, camera shake, auto-save (Phase 8)
 """
 
 # ── Ursina engine ──────────────────────────────────────────────────────── #
@@ -20,7 +21,7 @@ from ursina import (
 )
 
 # ── Project modules ────────────────────────────────────────────────────── #
-from src.menu import MainMenu
+from src.menu import MainMenu, HowToPlayMenu
 from src.settings import SettingsMenu
 from src.player import PlayerController
 from src.environment import GameEnvironment
@@ -33,9 +34,15 @@ from src.missions import MissionManager, create_sector_breach_mission
 from src.inventory import Inventory, EquipmentManager   # Phase 6
 from src.items import create_item                         # Phase 6
 from src.audio import AudioManager                        # Phase 7
+from src.effects import CameraFX, ParticleEmitter          # Phase 8
+from src.save_system import (                              # Phase 8
+    save_game, load_game, save_exists,
+    apply_save_data, delete_save,
+)
 from src.config import (
     DRONE_SPECS, TERMINAL_SPECS,
-    NEON_CYAN, NEON_MAGENTA, NEON_GREEN,
+    NEON_CYAN, NEON_MAGENTA, NEON_GREEN, NEON_YELLOW,
+    MENU_BG,
     ITEM_PICKUP_DISTANCE,          # Phase 6 — auto‑pickup range
     ITEM_HACK_BOOSTER_TIME,        # Phase 6 — hack boost seconds
     INVENTORY_TOGGLE_KEY,          # Phase 6 — TAB key
@@ -45,6 +52,13 @@ from src.config import (
     SFX_TERMINAL_ON, SFX_HACK_SUCCESS, SFX_HACK_FAIL,
     SFX_PICKUP, SFX_EXTRACT, SFX_MISSION_COMPLETE, SFX_MISSION_FAIL,
     SFX_DRONE_DISABLED, SFX_CLICK, SFX_INVENTORY_TOGGLE,
+    # Phase 8 — camera shake + save SFX
+    CAMERA_SHAKE_EMP_INTENSITY, CAMERA_SHAKE_EMP_DURATION,
+    CAMERA_SHAKE_DAMAGE_INTENSITY, CAMERA_SHAKE_DAMAGE_DURATION,
+    SFX_DAMAGE_HIT, SFX_SAVE_GAME, SFX_LOAD_GAME,
+    # Phase 8 — particle colours
+    PARTICLE_EMP_COUNT,
+    HUD_SECONDARY,
 )
 
 
@@ -111,6 +125,7 @@ class SceneManager:
         self.state = {
             'menu':        None,
             'settings':    None,
+            'how_to_play': None,
             'environment': None,
             'player':      None,
             'hud':         None,
@@ -123,6 +138,7 @@ class SceneManager:
             'end_screen':  [],         # Phase 5 — end overlay elements
             'inventory':   None,       # Phase 6 — Inventory instance
             'equip_mgr':   None,       # Phase 6 — EquipmentManager instance
+            'tutorial':    [],         # Tutorial overlay elements
         }
 
     def _destroy_keys(self, keys):
@@ -151,9 +167,9 @@ class SceneManager:
     def show_menu(self):
         """Show the main menu, destroying any active game."""
         self._destroy_keys([
-            'environment', 'player', 'hud', 'interaction', 'settings',
+            'environment', 'player', 'hud', 'interaction', 'settings', 'how_to_play',
             'game_state', 'hacking', 'ticker', 'drones', 'mission_mgr',
-            'end_screen', 'inventory', 'equip_mgr',   # Phase 6 cleanup
+            'end_screen', 'inventory', 'equip_mgr', 'tutorial',
         ])
         mouse.locked = False
         # Phase 7 — play menu music
@@ -161,8 +177,10 @@ class SceneManager:
         self.state['menu'] = MainMenu(
             start_callback=self.start_game,
             settings_callback=self.show_settings,
+            how_to_play_callback=self.show_how_to_play,
             exit_callback=application.quit,
-            audio_manager=self.audio,   # Phase 7 — pass audio
+            audio_manager=self.audio,            # Phase 7 — pass audio
+            continue_callback=self.continue_game, # Phase 8 — pass continue
         )
 
     def show_settings(self):
@@ -172,6 +190,15 @@ class SceneManager:
         self.state['settings'] = SettingsMenu(
             back_callback=self.show_menu,
             audio_manager=self.audio,   # Phase 7 — pass audio
+        )
+
+    def show_how_to_play(self):
+        """Show the How To Play panel."""
+        self._destroy_keys(['menu'])
+        mouse.locked = False
+        self.state['how_to_play'] = HowToPlayMenu(
+            back_callback=self.show_menu,
+            audio_manager=self.audio,
         )
 
     # ================================================================== #
@@ -241,6 +268,9 @@ class SceneManager:
 
         mouse.locked = True
 
+        # Show tutorial/controls overlay on first game start
+        self._show_tutorial()
+
     # ================================================================== #
     #  ITEM PICKUP  (Phase 6)
     # ================================================================== #
@@ -305,6 +335,20 @@ class SceneManager:
                 drone.apply_emp(duration)   # freeze the drone
         # Phase 7 — EMP sound effect
         self.audio.play_sfx(SFX_DRONE_DISABLED)
+        # Phase 8 — camera shake on EMP blast
+        CameraFX.trigger_shake(
+            CAMERA_SHAKE_EMP_INTENSITY,
+            CAMERA_SHAKE_EMP_DURATION,
+        )
+        # Phase 8 — EMP particle burst
+        if player_pos:
+            ParticleEmitter(
+                position=player_pos,
+                count=PARTICLE_EMP_COUNT,
+                particle_color=NEON_CYAN,
+                speed=5.0,
+                direction='outward',
+            )
 
     # ================================================================== #
     #  HACKING FLOW
@@ -383,6 +427,8 @@ class SceneManager:
             # Notify mission manager (Phase 5)
             if mm:
                 mm.on_terminal_breached(label)
+            # Phase 8 — auto-save after successful breach
+            self._auto_save()
         else:
             # Phase 7 — hack fail sound
             self.audio.play_sfx(SFX_HACK_FAIL)
@@ -412,6 +458,8 @@ class SceneManager:
         if result == 'complete':
             # Phase 7 — extraction success sound
             self.audio.play_sfx(SFX_EXTRACT)
+            # Phase 8 — auto-save before showing end screen
+            self._auto_save()
             self._show_end_screen(True)
 
     # ================================================================== #
@@ -437,7 +485,7 @@ class SceneManager:
         elements = []
 
         # Dark backdrop
-        bg = Entity(parent=camera.ui, model='quad', scale=(2, 1),
+        bg = Entity(parent=camera.ui, model='quad', scale=(3, 3),
                      color=color.rgba(5, 3, 15, 200), z=0.5)
         elements.append(bg)
 
@@ -538,12 +586,65 @@ class SceneManager:
             hud.show_item_message(msg)
 
     # ================================================================== #
+    #  SAVE / LOAD  (Phase 8)
+    # ================================================================== #
+    def _auto_save(self):
+        """
+        Auto-save current game state to disk.
+        Called after terminal breach and extraction success.
+        """
+        gs        = self.state.get('game_state')
+        player    = self.state.get('player')
+        inventory = self.state.get('inventory')
+        mm        = self.state.get('mission_mgr')
+
+        success = save_game(gs, player, inventory, mm)
+        if success:
+            self.audio.play_sfx(SFX_SAVE_GAME)
+            hud = self.state.get('hud')
+            if hud:
+                hud.show_item_message('[ GAME SAVED ]', duration=1.5)
+
+    def continue_game(self):
+        """
+        Load save data, start a fresh game, then apply saved state.
+        Called from the menu when "Continue" is selected.
+        """
+        data = load_game()
+        if data is None:
+            return   # no save to load — do nothing
+
+        # Start a normal game session first
+        self.start_game()
+
+        # Then overlay saved state
+        gs        = self.state.get('game_state')
+        player    = self.state.get('player')
+        inventory = self.state.get('inventory')
+        mm        = self.state.get('mission_mgr')
+        env       = self.state.get('environment')
+
+        apply_save_data(data, gs, player, inventory, mm)
+
+        # Update terminal visuals for breached nodes
+        if env and gs:
+            for label in gs.breached_terminals:
+                env.set_terminal_color(label, 'breached')
+
+        self.audio.play_sfx(SFX_LOAD_GAME)
+
+    # ================================================================== #
     #  INPUT
     # ================================================================== #
     def handle_input(self, key):
         """Global input handler — delegates to active scene."""
         # Hacking panel has its own input
         if self.state.get('hacking') is not None:
+            return
+
+        # Tutorial overlay — any key press dismisses it
+        if self.state.get('tutorial'):
+            self._dismiss_tutorial()
             return
 
         # End screen controls
@@ -603,3 +704,127 @@ class SceneManager:
         if key == 'escape':
             if self.state.get('player') is not None:
                 self.show_menu()
+
+    # ================================================================== #
+    #  TUTORIAL OVERLAY
+    # ================================================================== #
+    def _show_tutorial(self):
+        """
+        Display a tutorial/controls overlay when game starts.
+        Dismissed by pressing any key or clicking.
+        """
+        # Pause the player while tutorial is showing
+        player = self.state.get('player')
+        if player and player.controller:
+            player.controller.enabled = False
+        mouse.locked = False
+
+        elements = []
+
+        # Semi-transparent backdrop
+        bg = Entity(parent=camera.ui, model='quad', scale=(3, 3),
+                     color=color.rgba(*MENU_BG, 230), z=0.2)
+        elements.append(bg)
+
+        # Title
+        title = Text(text='[ MISSION BRIEFING ]', parent=camera.ui,
+                      position=(0, 0.38), origin=(0, 0),
+                      scale=2.5, color=color.rgb(*NEON_CYAN),
+                      font='VeraMono.ttf')
+        elements.append(title)
+
+        # Separator
+        sep = Entity(parent=camera.ui, model='quad',
+                      scale=(0.6, 0.002), position=(0, 0.33),
+                      color=color.rgb(*NEON_CYAN), z=0)
+        elements.append(sep)
+
+        # Objective summary
+        obj_text = Text(
+            text='OBJECTIVE: Hack target terminals and reach\n'
+                 'the extraction zone to complete the mission.',
+            parent=camera.ui, position=(0, 0.27), origin=(0, 0),
+            scale=1.1, color=color.rgb(*NEON_YELLOW),
+            font='VeraMono.ttf',
+        )
+        elements.append(obj_text)
+
+        # Controls section
+        controls = [
+            ('MOVEMENT',      'W A S D'),
+            ('LOOK',          'Mouse'),
+            ('SPRINT',        'Hold Left Shift'),
+            ('JUMP',          'Space'),
+            ('INTERACT/HACK', 'E  (near terminals)'),
+            ('INVENTORY',     'TAB'),
+            ('USE ITEM Q',    'Q'),
+            ('USE ITEM R',    'R'),
+            ('BACK TO MENU',  'ESC'),
+        ]
+
+        # Controls header
+        ctrl_header = Text(
+            text='─── CONTROLS ───', parent=camera.ui,
+            position=(0, 0.17), origin=(0, 0),
+            scale=1.2, color=color.rgb(*NEON_CYAN),
+            font='VeraMono.ttf',
+        )
+        elements.append(ctrl_header)
+
+        y_start = 0.12
+        for i, (action, key_bind) in enumerate(controls):
+            y = y_start - i * 0.04
+            # Action label (left side)
+            act = Text(text=f'{action}', parent=camera.ui,
+                        position=(-0.22, y), origin=(0, 0),
+                        scale=0.85, color=color.rgb(*HUD_SECONDARY),
+                        font='VeraMono.ttf')
+            elements.append(act)
+            # Key binding (right side)
+            kb = Text(text=f'{key_bind}', parent=camera.ui,
+                       position=(0.12, y), origin=(0, 0),
+                       scale=0.85, color=color.rgb(*NEON_GREEN),
+                       font='VeraMono.ttf')
+            elements.append(kb)
+
+        # Tips
+        sep2 = Entity(parent=camera.ui, model='quad',
+                       scale=(0.6, 0.002), position=(0, -0.27),
+                       color=color.rgb(*NEON_CYAN), z=0)
+        elements.append(sep2)
+
+        tips = Text(
+            text='TIP: Avoid security drones. Pick up items\n'
+                 'for healing and hacking boosts. Use EMP\n'
+                 'pulses to disable drones temporarily.',
+            parent=camera.ui, position=(0, -0.32), origin=(0, 0),
+            scale=0.9, color=color.rgb(100, 100, 160),
+            font='VeraMono.ttf',
+        )
+        elements.append(tips)
+
+        # Dismiss hint
+        dismiss = Text(
+            text='>>> Press any key or click to start <<<',
+            parent=camera.ui, position=(0, -0.43), origin=(0, 0),
+            scale=1.3, color=color.rgb(*NEON_MAGENTA),
+            font='VeraMono.ttf',
+        )
+        elements.append(dismiss)
+
+        self.state['tutorial'] = elements
+
+    def _dismiss_tutorial(self):
+        """Remove the tutorial overlay and resume the game."""
+        for e in self.state.get('tutorial', []):
+            try:
+                ursina_destroy(e)
+            except Exception:
+                pass
+        self.state['tutorial'] = []
+
+        # Resume player control
+        player = self.state.get('player')
+        if player and player.controller:
+            player.controller.enabled = True
+        mouse.locked = True
