@@ -117,7 +117,7 @@ class MainMenu:
         menu.destroy()
     """
 
-    def __init__(self, start_callback, settings_callback, how_to_play_callback, exit_callback,
+    def __init__(self, start_callback, settings_callback, how_to_play_callback, upgrades_callback, exit_callback,
                  audio_manager=None, continue_callback=None):
         """
         Build every visual element of the main menu.
@@ -126,6 +126,7 @@ class MainMenu:
             start_callback       : called when "START GAME" is clicked
             settings_callback    : called when "SETTINGS" is clicked
             how_to_play_callback : called when "HOW TO PLAY" is clicked
+            upgrades_callback    : called when "UPGRADES" is clicked
             exit_callback        : called when "EXIT" is clicked
             audio_manager        : AudioManager (Phase 7) — optional
             continue_callback    : called when "CONTINUE" is clicked (Phase 8)
@@ -212,6 +213,8 @@ class MainMenu:
         self._make_button('>> START GAME <<', y_pos=btn_y,  callback=start_callback)
         btn_y -= 0.10
         self._make_button('>> SETTINGS <<',   y_pos=btn_y, callback=settings_callback)
+        btn_y -= 0.10
+        self._make_button('>> UPGRADES <<',   y_pos=btn_y, callback=upgrades_callback)
         btn_y -= 0.10
         self._make_button('>> HOW TO PLAY <<',y_pos=btn_y, callback=how_to_play_callback)
         btn_y -= 0.10

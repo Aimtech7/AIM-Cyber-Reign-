@@ -22,6 +22,7 @@ from ursina import (
 
 # ── Project modules ────────────────────────────────────────────────────── #
 from src.menu import MainMenu, HowToPlayMenu
+from src.upgrades import UpgradesMenu
 from src.settings import SettingsMenu
 from src.player import PlayerController
 from src.environment import GameEnvironment
@@ -38,6 +39,7 @@ from src.effects import CameraFX, ParticleEmitter          # Phase 8
 from src.save_system import (                              # Phase 8
     save_game, load_game, save_exists,
     apply_save_data, delete_save,
+    save_profile, load_profile,                            # Phase 9.2
 )
 from src.config import (
     DRONE_SPECS, TERMINAL_SPECS,
@@ -94,6 +96,7 @@ class _GameTicker(Entity):
         # Health and alert decay
         self.game_state.update_health(dt)
         self.game_state.update_alert(dt)
+        self.game_state.update_stats(dt)  # Phase 9.2 stat tracking
 
         # Mission message timer
         if self.mission_manager:
@@ -126,6 +129,7 @@ class SceneManager:
             'menu':        None,
             'settings':    None,
             'how_to_play': None,
+            'upgrades':    None,
             'environment': None,
             'player':      None,
             'hud':         None,
@@ -167,7 +171,7 @@ class SceneManager:
     def show_menu(self):
         """Show the main menu, destroying any active game."""
         self._destroy_keys([
-            'environment', 'player', 'hud', 'interaction', 'settings', 'how_to_play',
+            'environment', 'player', 'hud', 'interaction', 'settings', 'how_to_play', 'upgrades',
             'game_state', 'hacking', 'ticker', 'drones', 'mission_mgr',
             'end_screen', 'inventory', 'equip_mgr', 'tutorial',
         ])
@@ -178,6 +182,7 @@ class SceneManager:
             start_callback=self.start_game,
             settings_callback=self.show_settings,
             how_to_play_callback=self.show_how_to_play,
+            upgrades_callback=self.show_upgrades,
             exit_callback=application.quit,
             audio_manager=self.audio,            # Phase 7 — pass audio
             continue_callback=self.continue_game, # Phase 8 — pass continue
@@ -201,15 +206,32 @@ class SceneManager:
             audio_manager=self.audio,
         )
 
+    def show_upgrades(self):
+        """Show the cybernetic upgrades panel."""
+        self._destroy_keys(['menu'])
+        mouse.locked = False
+        self.state['upgrades'] = UpgradesMenu(
+            back_callback=self.show_menu,
+            audio_manager=self.audio,
+        )
+
     # ================================================================== #
     #  GAME
     # ================================================================== #
     def start_game(self):
         """Set up and launch a full game session."""
-        self._destroy_keys(['menu', 'settings', 'end_screen'])
+        self._destroy_keys(['menu', 'settings', 'upgrades', 'end_screen'])
+
+        # Load upgrades profile
+        _, upg = load_profile()
+        self.upgrades = upg
 
         # Game state
         self.state['game_state'] = GameState(total_terminals=len(TERMINAL_SPECS))
+        # Override health from upgrades
+        hp_bonus = upg.get('max_health', 0) * 20
+        self.state['game_state'].health += hp_bonus
+        self.state['game_state'].max_health = 100 + hp_bonus
 
         # Mission manager (Phase 5)
         mm = MissionManager()
@@ -225,6 +247,9 @@ class SceneManager:
 
         # Player (Phase 7 — pass audio for footsteps / jump)
         self.state['player'] = PlayerController(audio_manager=self.audio)
+        # Apply speed upgrade
+        speed_bonus = self.upgrades.get('speed', 0) * 0.1  # 10% buff per level
+        self.state['player'].controller.speed *= (1.0 + speed_bonus)
 
         # Interaction
         self.state['interaction'] = InteractionSystem(
@@ -382,8 +407,13 @@ class SceneManager:
 
         # Phase 6 — check for hack boost
         time_bonus = 0.0
+        
+        # Phase 9.2 — add permanent upgrade bonus
+        neural_level = getattr(self, 'upgrades', {}).get('hack_time', 0)
+        time_bonus += (neural_level * 1.5)  # +1.5s per upgrade level
+
         if gs and getattr(gs, 'hack_boost_active', False):
-            time_bonus = ITEM_HACK_BOOSTER_TIME
+            time_bonus += ITEM_HACK_BOOSTER_TIME
             gs.hack_boost_active = False   # consume the boost
 
         def on_complete(success):
@@ -497,6 +527,35 @@ class SceneManager:
         # Phase 7 — stop game music on end screen
         self.audio.stop_music()
 
+        # ── Phase 9.2 Grading Logic ──────────────────────────────── #
+        gs = self.state.get('game_state')
+        grade = "F"
+        credits_earned = 0
+        
+        if victory and gs:
+            # Simple grading algorithm
+            score = 1000
+            score -= gs.time_elapsed * 2
+            score -= gs.total_damage_taken * 5
+            score -= (gs.highest_alert_level * 150)
+            
+            if score >= 800:
+                grade = 'S'
+                credits_earned = 500
+            elif score >= 600:
+                grade = 'A'
+                credits_earned = 300
+            elif score >= 350:
+                grade = 'B'
+                credits_earned = 150
+            else:
+                grade = 'C'
+                credits_earned = 50
+                
+            # Save profile
+            prof_credits, prof_upgrades = load_profile()
+            save_profile(prof_credits + credits_earned, prof_upgrades)
+
         # Result text
         if victory:
             result_text = '[ MISSION COMPLETE ]'
@@ -506,13 +565,32 @@ class SceneManager:
             result_clr  = color.rgb(*NEON_MAGENTA)
 
         title = Text(text=result_text, parent=camera.ui,
-                     position=(0, 0.1), origin=(0, 0),
+                     position=(0, 0.3), origin=(0, 0),
                      scale=3.0, color=result_clr, font='VeraMono.ttf')
         elements.append(title)
+        
+        # ── Show Stats if Victory ────────────────────────────────── #
+        if victory and gs:
+            grade_txt = Text(text=f'GRADE: {grade}', parent=camera.ui,
+                         position=(0, 0.15), origin=(0, 0),
+                         scale=2.5, color=color.rgb(*NEON_YELLOW), font='VeraMono.ttf')
+            elements.append(grade_txt)
+            
+            stats_str = (
+                f"Time Elapsed: {gs.time_elapsed:.1f}s\n"
+                f"Damage Taken: {gs.total_damage_taken:.0f}\n"
+                f"Max Alert:    {gs.highest_alert_level}\n\n"
+                f"CREDITS EARNED:  +{credits_earned} CR"
+            )
+            
+            stats_txt = Text(text=stats_str, parent=camera.ui,
+                         position=(0, 0.0), origin=(0, 0),
+                         scale=1.2, color=color.rgb(200, 200, 200), font='VeraMono.ttf')
+            elements.append(stats_txt)
 
         # Instructions
         hint = Text(text='Press R to Restart  |  ESC for Menu',
-                    parent=camera.ui, position=(0, -0.05), origin=(0, 0),
+                    parent=camera.ui, position=(0, -0.3), origin=(0, 0),
                     scale=1.2, color=color.rgb(*NEON_CYAN), font='VeraMono.ttf')
         elements.append(hint)
 

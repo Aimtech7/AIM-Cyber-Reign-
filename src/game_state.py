@@ -56,13 +56,19 @@ class GameState:
         self.access_level    = 1
 
         # ── Player health (Phase 4) ──────────────────────────────────── #
-        self.health          = PLAYER_MAX_HEALTH   # start at full HP
+        self.max_health      = PLAYER_MAX_HEALTH
+        self.health          = self.max_health   # start at full HP
         self._damage_cooldown = 0.0                 # time since last damage
 
         # ── Alert system (Phase 4) ───────────────────────────────────── #
         self.alert_accumulator = 0.0   # raw alert score
         self.alert_level       = ALERT_LEVEL_CALM   # derived level
         self._alert_decay      = 0.0   # countdown timer
+
+        # ── Mission statistics (Phase 9.2) ───────────────────────────── #
+        self.time_elapsed        = 0.0
+        self.total_damage_taken  = 0.0
+        self.highest_alert_level = ALERT_LEVEL_CALM
 
         # ── Inventory integration (Phase 6) ──────────────────────────── #
         self.hack_boost_active = False   # set True by Hack Booster item
@@ -90,7 +96,7 @@ class GameState:
             'access_level':     self.access_level,
             'labels':           self.breached_labels.copy(),
             'health':           self.health,
-            'max_health':       PLAYER_MAX_HEALTH,
+            'max_health':       self.max_health,
             'alert_level':      self.alert_level,
         }
 
@@ -109,6 +115,7 @@ class GameState:
         """
         self.health = max(0.0, self.health - amount)
         self._damage_cooldown = PLAYER_REGEN_DELAY   # reset regen delay
+        self.total_damage_taken += amount            # Phase 9.2 tracking
         return self.health > 0
 
     def heal(self, amount):
@@ -120,7 +127,7 @@ class GameState:
 
         Phase 6 — called by EnergyCellItem.
         """
-        self.health = min(PLAYER_MAX_HEALTH, self.health + amount)
+        self.health = min(self.max_health, self.health + amount)
 
     def is_alive(self):
         """Check if the player still has health remaining."""
@@ -133,7 +140,7 @@ class GameState:
         Args:
             dt : float — seconds since last frame.
         """
-        if self.health >= PLAYER_MAX_HEALTH:
+        if self.health >= self.max_health:
             return  # already full — skip
 
         # Count down the damage cooldown
@@ -142,7 +149,7 @@ class GameState:
             return  # still cooling down — no regen yet
 
         # Regenerate health
-        self.health = min(PLAYER_MAX_HEALTH,
+        self.health = min(self.max_health,
                           self.health + PLAYER_HEALTH_REGEN * dt)
 
     # ================================================================== #
@@ -202,6 +209,13 @@ class GameState:
             self.alert_level = ALERT_LEVEL_SUSPICIOUS   # 1
         else:
             self.alert_level = ALERT_LEVEL_CALM         # 0
+            
+        if self.alert_level > self.highest_alert_level:
+            self.highest_alert_level = self.alert_level
+
+    def update_stats(self, dt):
+        """Phase 9.2 — track total time spent in mission."""
+        self.time_elapsed += dt
 
     # ================================================================== #
     #  CLEANUP

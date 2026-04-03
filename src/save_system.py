@@ -220,3 +220,45 @@ def apply_save_data(data, game_state, player, inventory, mission_manager):
                 obj_idx,
                 len(mission_manager.current_mission.objectives) - 1,
             )
+
+# ══════════════════════════════════════════════════════════════════════════ #
+#  Global Profile (Phase 9.2 - Progression)
+# ══════════════════════════════════════════════════════════════════════════ #
+
+def get_profile_path():
+    os.makedirs(SAVE_DIR, exist_ok=True)
+    return os.path.join(SAVE_DIR, 'profile.json')
+
+def save_profile(credits_amount, upgrades):
+    """
+    Save global progression (credits and upgrades) to profile.json.
+    """
+    try:
+        data = {
+            'credits': credits_amount,
+            'upgrades': upgrades
+        }
+        with open(get_profile_path(), 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2)
+        return True
+    except Exception as e:
+        print(f'[SaveSystem] ERROR saving profile: {e}')
+        return False
+
+def load_profile():
+    """
+    Load global progression. Returns (credits, upgrades_dict).
+    """
+    path = get_profile_path()
+    default_profile = (0, {'max_health': 0, 'speed': 0, 'hack_time': 0})
+    
+    if not os.path.isfile(path):
+        return default_profile
+        
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return (data.get('credits', 0), data.get('upgrades', default_profile[1]))
+    except Exception as e:
+        print(f'[SaveSystem] WARNING: corrupt profile — {e}')
+        return default_profile
